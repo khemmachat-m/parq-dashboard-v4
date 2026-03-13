@@ -634,16 +634,15 @@ function detailModalHtml(r) {
   };
 
   // Common fields (all sources)
-  const locationFull = f('', 'Location_FullName');
   const common = [
-    ['ID',              f(r.id)],
-    ['Source',          f(r._src)],
-    ['Date',            f(r.date)],
-    ['Location',        f(r.location, 'Location_FullName', 'Location_Name')],
-    ['Location (Full)', locationFull !== f(r.location, 'Location_FullName', 'Location_Name') ? locationFull : ''],
-    ['Priority',        f(r.priority, 'Priority_Name')],
-    ['Status',          f(r.statusLabel || r.status, 'Status_Label', 'Status')],
-    ['Service',         f(r._service)],
+    ['ID',               f(r.id)],
+    ['Source',           f(r._src)],
+    ['Date',             f(r.date)],
+    ['Location',         f(r.location, 'Location_Name')],
+    ['Location (Full)',  f(r.location, 'Location_FullName')],
+    ['Priority',         f(r.priority, 'Priority_Name')],
+    ['Status',           f(r.statusLabel || r.status, 'Status_Label', 'Status')],
+    ['Service',          f(r._service)],
   ];
 
   // Source-specific fields
