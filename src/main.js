@@ -18,6 +18,8 @@ import {
   initHotspot, hsUpload, hsGoDashboard,
   hsSetDim, hsSubTab, hsDateFrom, hsDateTo,
   hsClearDate, hsPreset, hsSvcFilter, hsToggleDrill, hsDrillSrc,
+  hsDrillSort, hsDrillColFilter, hsToggleColFilter, hsDrillReset,
+  hsOpenModal, hsCloseModal,
 } from './hotspot.js';
 
 // ── Expose all functions needed by inline HTML onclick handlers ───
@@ -51,6 +53,12 @@ window._app = {
   hsSvcFilter,
   hsToggleDrill,
   hsDrillSrc,
+  hsDrillSort,
+  hsDrillColFilter,
+  hsToggleColFilter,
+  hsDrillReset,
+  hsOpenModal,
+  hsCloseModal,
 };
 
 // ── Init ─────────────────────────────────────────────────────────

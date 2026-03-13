@@ -16,6 +16,10 @@ export const HS = {
   svcFilter:   'ALL',        // 'ALL' | 'Hard' | 'Soft'
   expandedKey: null,         // which group row is expanded
   drillSrc:    {},           // { groupKey: 'All'|'CWO'|'Case'|'PPM' }
+  drillSort:   {},           // { groupKey: { col, dir } }
+  drillFilter: {},           // { groupKey: { colKey: value } }
+  colFilterOpen: null,       // 'groupKey::colKey' currently open dropdown
+  modalRecord: null,         // record shown in detail modal
   pending:     { cwo:false, cases:false, ppm:false },
 };
 
@@ -378,71 +382,6 @@ function groupedTableHtml(groups) {
   </div>`;
 }
 
-// ─── Drill-down sub-table ─────────────────────────────────────────
-function drillDownHtml(row) {
-  const keyEsc = JSON.stringify(row.key).replace(/'/g, "\\'");
-  const srcFilter = HS.drillSrc[row.key] || 'All';
-  let records = srcFilter === 'All' ? row.records : row.records.filter(r => r._src === srcFilter);
-  records = [...records].sort((a,b) => (b.date||'').localeCompare(a.date||''));
-
-  const srcBtns = ['All','CWO','Case','PPM'].map(s => {
-    const cnt    = s === 'All' ? row.records.length : row.records.filter(r => r._src === s).length;
-    const active = srcFilter === s;
-    const c      = SRC_COLOR[s] || '#f97316';
-    return `<button onclick="window._app.hsDrillSrc(${keyEsc},'${s}')"
-      style="padding:3px 11px;border-radius:5px;cursor:pointer;font-size:10px;font-weight:700;
-      font-family:inherit;border:1px solid ${active?c:'#1e293b'};
-      background:${active?c+'22':'transparent'};color:${active?c:'#64748b'};transition:all .15s">
-      ${s} (${cnt})
-    </button>`;
-  }).join('');
-
-  const tableRows = records.slice(0,100).map((r,i) => {
-    const acc = SRC_COLOR[r._src] || '#38bdf8';
-    const desc = (r.desc || r.eventType || '—').slice(0,80);
-    return `<tr style="border-top:1px solid #0f1e30;background:${i%2===0?'transparent':'#060d18'}"
-      onmouseover="this.style.background='${acc}11'"
-      onmouseout="this.style.background='${i%2===0?'transparent':'#060d18'}'">
-      <td style="padding:7px 10px">${srcChipHtml(r._src)}</td>
-      <td style="padding:7px 10px;font-size:11px;color:#94a3b8;font-family:monospace;white-space:nowrap">${r.id}</td>
-      <td style="padding:7px 10px;font-size:11px;color:#64748b;white-space:nowrap">${r.date||'—'}</td>
-      <td style="padding:7px 10px;font-size:11px;color:#94a3b8;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.location}</td>
-      <td style="padding:7px 10px;font-size:11px;color:#cbd5e1;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.asset}</td>
-      <td style="padding:7px 10px">${badgeHtml(r.status)}</td>
-      <td style="padding:7px 10px">${r._src==='PPM'?'<span style="color:#34d399;font-size:11px">'+r._raw.ActualCompletion+'%</span>':priHtml(r.priority)}</td>
-      <td style="padding:7px 10px;font-size:11px;color:#64748b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${desc.replace(/"/g,'&quot;')}">${desc}</td>
-    </tr>`;
-  }).join('');
-
-  const more = records.length > 100 ?
-    `<tr><td colspan="8" style="padding:10px 12px;font-size:11px;color:#475569;text-align:center">
-      … and ${(records.length-100).toLocaleString()} more rows. Use filters to narrow down.
-    </td></tr>` : '';
-
-  return `
-  <div style="margin:0 0 0 28px;border-left:2px solid #1e3a5f;padding:12px 0 12px 16px">
-    <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:10px;color:#475569;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-right:2px">SOURCE:</span>
-      ${srcBtns}
-      <span style="margin-left:auto;font-size:10px;color:#334155;font-family:monospace">${records.length} records</span>
-    </div>
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;min-width:650px">
-        <thead>
-          <tr style="background:#081020">
-            ${['Source','ID','Date','Location','Asset','Status','Priority','Description'].map(h =>
-              `<th style="padding:7px 10px;text-align:left;font-size:9px;font-weight:700;
-              color:#475569;text-transform:uppercase;letter-spacing:1.3px;border-bottom:1px solid #1e293b">${h}</th>`
-            ).join('')}
-          </tr>
-        </thead>
-        <tbody>${tableRows}${more}</tbody>
-      </table>
-    </div>
-    <div style="margin-top:8px;font-size:9px;color:#1e3a5f">💡 Showing up to 100 rows · Use Source filter to narrow</div>
-  </div>`;
-}
-
 // ─── Analytics charts (pure SVG/HTML) ────────────────────────────
 
 function kpiHtml(tagged) {
@@ -650,6 +589,59 @@ function analyticsHtml(tagged) {
   </div>`;
 }
 
+// ─── Detail Modal ─────────────────────────────────────────────────────────────
+
+function detailModalHtml(r) {
+  if (!r) return '';
+  const color = SRC_COLOR[r._src] || '#38bdf8';
+  const fields = [
+    ['ID',           r.id],
+    ['Source',       r._src],
+    ['Date',         r.date],
+    ['Location',     r.location],
+    ['Event Type',   r.eventType],
+    ['Problem Type', r.problemType],
+    ['Asset',        r.asset],
+    ['Priority',     r.priority],
+    ['Status',       r.status],
+    ['Service',      r._service],
+    ['Description',  r.desc || '—'],
+  ].filter(([,v]) => v && v !== '—' && v !== 'undefined');
+
+  const rows = fields.map(([label, val]) => `
+    <tr style="border-top:1px solid #1e293b">
+      <td style="padding:10px 4px;font-size:10px;font-weight:700;color:#475569;
+        text-transform:uppercase;letter-spacing:1.2px;width:140px;vertical-align:top;
+        font-family:monospace">${label}</td>
+      <td style="padding:10px 4px;font-size:13px;color:#e2e8f0;line-height:1.6">${val}</td>
+    </tr>`).join('');
+
+  return `
+  <div id="hsDetailModal" onclick="window._app.hsCloseModal()"
+    style="position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;
+    justify-content:center;z-index:2000;backdrop-filter:blur(6px)">
+    <div onclick="event.stopPropagation()"
+      style="background:#0f172a;border-radius:20px;padding:32px;max-width:560px;width:92%;
+      box-shadow:0 0 0 1px ${color}44,0 32px 80px rgba(0,0,0,.7);
+      max-height:88vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:${color};letter-spacing:2.5px;
+            text-transform:uppercase;margin-bottom:4px">${r._src}</div>
+          <div style="font-size:24px;font-weight:800;color:#f1f5f9">${r.id}</div>
+          <div style="font-size:13px;color:#475569;margin-top:2px">${r.location} · ${r.date}</div>
+        </div>
+        <button onclick="window._app.hsCloseModal()"
+          style="background:#1e293b;border:none;border-radius:10px;width:36px;height:36px;
+          cursor:pointer;font-size:18px;color:#64748b;flex-shrink:0;font-family:inherit">×</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // MAIN RENDER ENTRY
 // ═══════════════════════════════════════════════════════════════════
@@ -671,7 +663,9 @@ export function renderHotspot() {
   const tagged = getTagged();
   const groups = getGroups(tagged);
 
+  const modalHtml = HS.modalRecord ? detailModalHtml(HS.modalRecord) : '';
   panel.innerHTML = `
+  ${modalHtml}
   <div style="font-family:'DM Sans',sans-serif;color:#e2e8f0;background:#0f172a;
     border-radius:16px;padding:24px;box-shadow:0 2px 16px rgba(0,0,0,.4)">
     <div style="font-size:16px;font-weight:800;color:#f97316;margin-bottom:4px">🔥 Hotspot Analysis</div>
@@ -739,5 +733,231 @@ export function hsToggleDrill(key) {
   HS.expandedKey = HS.expandedKey === key ? null : key; renderHotspot();
 }
 export function hsDrillSrc(key, src) {
-  HS.drillSrc[key] = src; renderHotspot();
+  HS.drillSrc[key] = src;
+  HS.drillFilter[key] = {};
+  renderHotspot();
 }
+export function hsDrillSort(key, col) {
+  const cur = HS.drillSort[key] || { col:'date', dir:'desc' };
+  HS.drillSort[key] = {
+    col, dir: cur.col === col ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'
+  };
+  renderHotspot();
+}
+export function hsDrillColFilter(key, colKey, val) {
+  if (!HS.drillFilter[key]) HS.drillFilter[key] = {};
+  HS.drillFilter[key][colKey] = val;
+  HS.colFilterOpen = null;
+  renderHotspot();
+}
+export function hsToggleColFilter(key, colKey) {
+  const k = `${key}::${colKey}`;
+  HS.colFilterOpen = HS.colFilterOpen === k ? null : k;
+  renderHotspot();
+}
+export function hsDrillReset(key) {
+  HS.drillSrc[key]    = 'All';
+  HS.drillFilter[key] = {};
+  HS.drillSort[key]   = { col:'date', dir:'desc' };
+  HS.colFilterOpen    = null;
+  renderHotspot();
+}
+export function hsOpenModal(jsonStr) {
+  try { HS.modalRecord = JSON.parse(jsonStr); } catch(e) { return; }
+  renderHotspot();
+}
+export function hsCloseModal() {
+  HS.modalRecord = null;
+  renderHotspot();
+}// ─── Drill-down sub-table (with sort / col-filter / detail modal) ────────────
+
+const DRILL_COLS = [
+  { key:'_src',     label:'Source',      sortable:true,  filterable:true  },
+  { key:'id',       label:'ID',          sortable:true,  filterable:false },
+  { key:'date',     label:'Date',        sortable:true,  filterable:false },
+  { key:'location', label:'Location',    sortable:true,  filterable:true  },
+  { key:'asset',    label:'Asset',       sortable:true,  filterable:true  },
+  { key:'status',   label:'Status',      sortable:true,  filterable:true  },
+  { key:'priority', label:'Priority',    sortable:true,  filterable:true  },
+  { key:'desc',     label:'Description', sortable:false, filterable:false },
+];
+
+const PRI_ORDER = { Critical:0, High:1, Medium:2, Low:3 };
+
+function getFilterValues(records, colKey) {
+  const vals = colKey === '_src'
+    ? [...new Set(records.map(r => r._src))]
+    : [...new Set(records.map(r => r[colKey]).filter(Boolean))];
+  return vals.sort();
+}
+
+function drillDownHtml(row) {
+  const gk      = row.key;
+  const gkJson  = JSON.stringify(gk);
+  const srcFilter   = HS.drillSrc[gk]    || 'All';
+  const sort        = HS.drillSort[gk]   || { col:'date', dir:'desc' };
+  const colFilters  = HS.drillFilter[gk] || {};
+  const activeFilters = Object.values(colFilters).filter(v => v && v !== 'All').length;
+
+  // Filter by source
+  let records = srcFilter === 'All' ? row.records : row.records.filter(r => r._src === srcFilter);
+  // Apply column filters
+  Object.entries(colFilters).forEach(([k, v]) => {
+    if (!v || v === 'All') return;
+    records = records.filter(r => (k === '_src' ? r._src : r[k]) === v);
+  });
+  // Sort
+  records = [...records].sort((a, b) => {
+    if (sort.col === 'priority') {
+      const av = PRI_ORDER[a.priority] ?? 9, bv = PRI_ORDER[b.priority] ?? 9;
+      return sort.dir === 'asc' ? av - bv : bv - av;
+    }
+    const av = String(sort.col === '_src' ? a._src : (a[sort.col] ?? '')).toLowerCase();
+    const bv = String(sort.col === '_src' ? b._src : (b[sort.col] ?? '')).toLowerCase();
+    return sort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+
+  // Source filter chips
+  const srcBtns = ['All','CWO','Case','PPM'].map(s => {
+    const cnt    = s === 'All' ? row.records.length : row.records.filter(r => r._src === s).length;
+    const active = srcFilter === s;
+    const c      = SRC_COLOR[s] || '#f97316';
+    return `<button onclick="window._app.hsDrillSrc(${gkJson},'${s}')"
+      style="padding:4px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;
+      font-family:inherit;border:1px solid ${active?c:'#1e293b'};
+      background:${active?c+'22':'transparent'};color:${active?c:'#64748b'};transition:all .15s">
+      ${s} <span style="opacity:.65">(${cnt})</span>
+    </button>`;
+  }).join('');
+
+  const resetBtn = (activeFilters > 0 || srcFilter !== 'All')
+    ? `<button onclick="window._app.hsDrillReset(${gkJson})"
+        style="padding:4px 12px;border-radius:6px;border:1px solid #f87171;background:#1a0a0a;
+        color:#f87171;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">
+        ✕ Reset
+      </button>` : '';
+
+  // Column headers with sort + filter
+  const thCells = DRILL_COLS.map(c => {
+    const isSorted  = sort.col === c.key;
+    const hasFilter = colFilters[c.key] && colFilters[c.key] !== 'All';
+    const accent    = '#f97316';
+    const color     = (isSorted || hasFilter) ? accent : '#475569';
+    const sortIcon  = isSorted ? (sort.dir === 'asc' ? '↑' : '↓') : '↕';
+    const sortBtn   = c.sortable
+      ? `<span onclick="window._app.hsDrillSort(${gkJson},'${c.key}')"
+          style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;
+          padding:2px 4px;border-radius:4px;background:${isSorted?'#f9731614':'transparent'}">
+          ${c.label}
+          <span style="font-size:9px;color:${isSorted?accent:'#334155'}">${sortIcon}</span>
+        </span>`
+      : `<span style="padding:2px 4px">${c.label}</span>`;
+
+    // Col filter dropdown
+    let filterBtn = '';
+    if (c.filterable) {
+      const vals = getFilterValues(row.records, c.key);
+      const openKey = `${gkJson}::${c.key}`;
+      const isOpen  = HS.colFilterOpen === `${gk}::${c.key}`;
+      const curVal  = colFilters[c.key] || 'All';
+      const filterDot = hasFilter ? '●' : '⌄';
+      const dropdownItems = ['All', ...vals].map(v =>
+        `<div onclick="window._app.hsDrillColFilter(${gkJson},'${c.key}',${JSON.stringify(v)});event.stopPropagation()"
+          style="padding:7px 12px;border-radius:6px;cursor:pointer;font-size:12px;
+          font-weight:${v===curVal?700:400};color:${v===curVal?accent:'#cbd5e1'};
+          background:${v===curVal?'#1e293b':'transparent'}"
+          onmouseover="if('${v}'!=='${curVal}')this.style.background='#1e293b'"
+          onmouseout="if('${v}'!=='${curVal}')this.style.background='transparent'">
+          ${v}
+        </div>`
+      ).join('');
+      const dropdown = isOpen
+        ? `<div style="position:absolute;top:100%;left:0;z-index:999;background:#0f172a;
+            border:1px solid #334155;border-radius:10px;padding:6px;min-width:160px;
+            box-shadow:0 16px 40px rgba(0,0,0,.6);max-height:280px;overflow-y:auto">
+            ${dropdownItems}
+          </div>` : '';
+      filterBtn = `<span style="position:relative;display:inline-block">
+        <button onclick="window._app.hsToggleColFilter(${gkJson},'${c.key}');event.stopPropagation()"
+          style="background:none;border:none;cursor:pointer;padding:0 2px;
+          color:${hasFilter?accent:'#475569'};font-size:12px;font-family:inherit"
+          title="Filter ${c.label}">${filterDot}</button>
+        ${dropdown}
+      </span>`;
+    }
+
+    return `<th style="padding:9px 10px;text-align:left;white-space:nowrap;font-size:10px;
+      font-weight:700;letter-spacing:1.3px;text-transform:uppercase;user-select:none;
+      color:${color};border-bottom:1px solid ${isSorted?'#f9731644':'#1e293b'}">
+      <span style="display:inline-flex;align-items:center;gap:4px">
+        ${sortBtn}${filterBtn}
+      </span>
+    </th>`;
+  }).join('');
+
+  // Rows
+  const tableRows = records.slice(0,200).map((r, i) => {
+    const acc  = SRC_COLOR[r._src] || '#38bdf8';
+    const desc = (r.desc || r.eventType || '—').slice(0, 80);
+    const rJson = JSON.stringify({
+      id:r.id, date:r.date, location:r.location, asset:r.asset, status:r.status,
+      priority:r.priority, desc:r.desc||'', _src:r._src, _service:r._service||'',
+      eventType:r.eventType||'', problemType:r.problemType||'',
+      category:r.category||'',
+    }).replace(/'/g,"\'");
+    return `<tr onclick="window._app.hsOpenModal('${rJson.replace(/"/g,'&quot;')}')"
+      style="border-top:1px solid #0f1e30;cursor:pointer;background:${i%2===0?'transparent':'#060d18'};transition:background .1s"
+      onmouseover="this.style.background='${acc}11'"
+      onmouseout="this.style.background='${i%2===0?'transparent':'#060d18'}'">
+      <td style="padding:9px 10px">${srcChipHtml(r._src)}</td>
+      <td style="padding:9px 10px;font-size:12px;color:#94a3b8;font-family:monospace;white-space:nowrap">${r.id}</td>
+      <td style="padding:9px 10px;font-size:12px;color:#64748b;white-space:nowrap">${r.date||'—'}</td>
+      <td style="padding:9px 10px;font-size:12px;color:#94a3b8;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis">${r.location}</td>
+      <td style="padding:9px 10px;font-size:12px;color:#cbd5e1;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis">${r.asset}</td>
+      <td style="padding:9px 10px">${badgeHtml(r.status)}</td>
+      <td style="padding:9px 10px">${priHtml(r.priority)}</td>
+      <td style="padding:9px 10px;font-size:12px;color:#64748b;max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${desc.replace(/"/g,'&quot;')}">${desc}</td>
+    </tr>`;
+  }).join('');
+
+  const more = records.length > 200
+    ? `<tr><td colspan="8" style="text-align:center;padding:10px;font-size:11px;color:#475569">
+        … and ${records.length-200} more. Use filters to narrow down.
+      </td></tr>` : '';
+
+  const noRows = records.length === 0
+    ? `<tr><td colspan="8" style="text-align:center;padding:24px;color:#334155;font-size:13px">
+        No records match your filters.
+      </td></tr>` : '';
+
+  return `
+  <div style="margin:0 0 0 32px;border-left:2px solid #1e3a5f;padding:14px 0 14px 18px">
+    <!-- Source chips + reset -->
+    <div style="display:flex;gap:6px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:10px;color:#475569;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-right:4px">SOURCE:</span>
+      ${srcBtns}
+      ${resetBtn}
+      <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
+        ${activeFilters > 0 ? `<span style="font-size:11px;color:#f97316;font-weight:700">${activeFilters} filter${activeFilters>1?'s':''} active</span>` : ''}
+        <span style="font-size:11px;color:#334155;font-family:monospace">${records.length}/${row.records.length} records</span>
+      </div>
+    </div>
+    <!-- Table -->
+    <div style="overflow-x:auto;padding-right:16px">
+      <table style="width:100%;border-collapse:collapse;min-width:700px">
+        <thead>
+          <tr style="background:#081020">${thCells}</tr>
+        </thead>
+        <tbody>${tableRows}${noRows}${more}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:10px;color:#1e3a5f;display:flex;gap:16px">
+      <span>↑↓ Click column to sort</span>
+      <span>⌄ Column filter</span>
+      <span>💡 Click row for full detail</span>
+    </div>
+  </div>`;
+}
+
+// ─── Analytics charts (pure SVG/HTML) ──────────────────────────────────────
+
