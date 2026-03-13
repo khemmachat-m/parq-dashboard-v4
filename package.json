@@ -1,16 +1,21 @@
 {
-  "name": "parq-dashboard-v3",
-  "version": "1.0.0",
-  "description": "PARQ Dashboard Generator — JLL · The PARQ · JOB152",
+  "name": "parq-dashboard-v4",
+  "version": "4.0.0",
+  "description": "PARQ Hotspot Analytics Dashboard v4 — JLL Smart City OB JOB152",
+  "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev":     "vite",
+    "build":   "vite build",
     "preview": "vite preview"
   },
-  "devDependencies": {
-    "vite": "^5.4.0"
-  },
   "dependencies": {
-    "papaparse": "^5.4.1"
+    "react":          "^18.3.1",
+    "react-dom":      "^18.3.1",
+    "papaparse":      "^5.4.1",
+    "recharts":       "^2.12.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite":                 "^5.4.0"
   }
 }

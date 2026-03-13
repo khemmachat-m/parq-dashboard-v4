@@ -1,4 +1,9 @@
 node_modules/
 dist/
+<<<<<<< HEAD
 .DS_Store
 *.local
+=======
+.env
+.env.local
+>>>>>>> e4c65c56ea9783b501b20eb235806c52dac8dfb5
