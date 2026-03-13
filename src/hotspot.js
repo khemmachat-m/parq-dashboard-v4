@@ -20,6 +20,7 @@ export const HS = {
   drillFilter: {},           // { groupKey: { colKey: value } }
   colFilterOpen: null,       // 'groupKey::colKey' currently open dropdown
   modalRecord: null,         // record shown in detail modal
+  recordCache: {},            // { uid: full record } for modal lookup
   pending:     { cwo:false, cases:false, ppm:false },
 };
 
@@ -127,7 +128,30 @@ function mapRow(raw, src) {
   const desc = r.Description || r.ShortDescription || r.Subject || r.TaskName || '';
   const svc  = classifySvc({ asset, eventType, problemType, category });
 
-  return { id, date, location, eventType, problemType, asset, assetGroup, priority, status, desc, category, _service:svc, _src:src, _raw:raw };
+  // ── Extra fields per source ──
+  const assetOpsStatus = r.Asset_OperationalStatus || '';
+  // Case extras
+  const shortDesc          = r.ShortDescription || '';
+  const resolution         = r.Resolution || '';
+  // CWO extras
+  const pausedReason       = r.PausedReason || '';
+  const completionComment  = r.CompletionComment || '';
+  const closureComment     = r.ClosureComment || '';
+  const clientVerComment   = r.ClientVerificationComment || '';
+  const caseRefNo          = r.CaseRefNo || r.CaseReferenceNo || '';
+  // PPM extras
+  const masterWOTitle      = r.MasterWorkOrderTitle || r.TaskName || '';
+  const checklistName      = r.ChecklistName || '';
+  const ppmMainCat         = r.PPM_Main_Category || '';
+  const ppmTaskCat         = r.PPM_Task_Category || '';
+  const statusLabel        = r.Status_Label || '';
+  const locationCustom     = r.Location_Custom || '';
+
+  return { id, date, location, eventType, problemType, asset, assetGroup, assetModel,
+    assetOpsStatus, priority, status, desc, category, _service:svc, _src:src, _raw:raw,
+    shortDesc, resolution,
+    pausedReason, completionComment, closureComment, clientVerComment, caseRefNo,
+    masterWOTitle, checklistName, ppmMainCat, ppmTaskCat, statusLabel, locationCustom };
 }
 
 // ─── Load data from S._enrichedCache ─────────────────────────────
@@ -600,25 +624,69 @@ function analyticsHtml(tagged) {
 function detailModalHtml(r) {
   if (!r) return '';
   const color = SRC_COLOR[r._src] || '#38bdf8';
-  const fields = [
-    ['ID',           r.id],
-    ['Source',       r._src],
-    ['Date',         r.date],
-    ['Location',     r.location],
-    ['Event Type',   r.eventType],
-    ['Problem Type', r.problemType],
-    ['Asset',        r.asset],
-    ['Priority',     r.priority],
-    ['Status',       r.status],
-    ['Service',      r._service],
-    ['Description',  r.desc || '—'],
-  ].filter(([,v]) => v && v !== '—' && v !== 'undefined');
+
+  // Helper: mapped field first, then raw CSV column fallbacks
+  const raw = r._raw || {};
+  const f = (mapped, ...rawKeys) => {
+    if (mapped && String(mapped).trim() && mapped !== '—' && mapped !== 'undefined') return mapped;
+    for (const k of rawKeys) { const v = raw[k]; if (v && String(v).trim()) return String(v).trim(); }
+    return '';
+  };
+
+  // Common fields (all sources)
+  const common = [
+    ['ID',           f(r.id)],
+    ['Source',       f(r._src)],
+    ['Date',         f(r.date)],
+    ['Location',     f(r.location, 'Location_FullName', 'Location_Name')],
+    ['Priority',     f(r.priority, 'Priority_Name')],
+    ['Status',       f(r.statusLabel || r.status, 'Status_Label', 'Status')],
+    ['Service',      f(r._service)],
+  ];
+
+  // Source-specific fields
+  const specific =
+    r._src === 'CWO' ? [
+      ['Asset Name',            f(r.asset,             'Asset_Name', 'AssetName')],
+      ['Asset Model',           f(r.assetModel,        'Asset_Model')],
+      ['Asset Op. Status',      f(r.assetOpsStatus,    'Asset_OperationalStatus')],
+      ['Event Type',            f(r.eventType,         'EventType_Description', 'EventType_Name')],
+      ['Problem Type',          f(r.problemType,       'ProblemType_Description', 'ProblemType_Name')],
+      ['Case Ref No',           f(r.caseRefNo,         'CaseRefNo', 'CaseReferenceNo')],
+      ['Description',           f(r.desc,              'Description', 'ShortDescription')],
+      ['Paused Reason',         f(r.pausedReason,      'PausedReason')],
+      ['Completion Comment',    f(r.completionComment, 'CompletionComment')],
+      ['Closure Comment',       f(r.closureComment,    'ClosureComment')],
+      ['Client Verification',   f(r.clientVerComment,  'ClientVerificationComment')],
+      ['Location (Full)',        f(r.location,          'Location_FullName')],
+    ] : r._src === 'Case' ? [
+      ['Asset Name',            f(r.asset,             'Asset_Name', 'EquipmentTag')],
+      ['Asset Model',           f(r.assetModel,        'Asset_Model')],
+      ['Asset Op. Status',      f(r.assetOpsStatus,    'Asset_OperationalStatus')],
+      ['Event Type',            f(r.eventType,         'EventType_Description', 'EventType_Name')],
+      ['Short Description',     f(r.shortDesc,         'ShortDescription', 'ShortDesc')],
+      ['Resolution',            f(r.resolution,        'Resolution')],
+      ['Location (Full)',        f(r.location,          'Location_FullName')],
+    ] : [ // PPM
+      ['Asset Name',            f(r.asset,             'Asset_Name', 'AssetName')],
+      ['Asset Model',           f(r.assetModel,        'Asset_Model')],
+      ['Asset Op. Status',      f(r.assetOpsStatus,    'Asset_OperationalStatus')],
+      ['Master WO Title',       f(r.masterWOTitle,     'MasterWorkOrderTitle', 'TaskName')],
+      ['Checklist',             f(r.checklistName,     'ChecklistName')],
+      ['PPM Main Category',     f(r.ppmMainCat,        'PPM_Main_Category')],
+      ['PPM Task Category',     f(r.ppmTaskCat,        'PPM_Task_Category')],
+      ['Status Label',          f(r.statusLabel,       'Status_Label')],
+      ['Location Custom',       f(r.locationCustom,    'Location_Custom')],
+    ];
+
+  const fields = [...common, ...specific]
+    .filter(([,v]) => v && String(v).trim() !== '' && v !== 'undefined' && v !== '—');
 
   const rows = fields.map(([label, val]) => `
     <tr style="border-top:1px solid #1e293b">
       <td style="padding:10px 4px;font-size:10px;font-weight:700;color:#475569;
-        text-transform:uppercase;letter-spacing:1.2px;width:140px;vertical-align:top;
-        font-family:monospace">${label}</td>
+        text-transform:uppercase;letter-spacing:1.2px;width:160px;vertical-align:top;
+        font-family:monospace;white-space:nowrap">${label}</td>
       <td style="padding:10px 4px;font-size:13px;color:#e2e8f0;line-height:1.6">${val}</td>
     </tr>`).join('');
 
@@ -768,8 +836,10 @@ export function hsDrillReset(key) {
   HS.colFilterOpen    = null;
   renderHotspot();
 }
-export function hsOpenModal(jsonStr) {
-  try { HS.modalRecord = JSON.parse(jsonStr); } catch(e) { return; }
+export function hsOpenModal(uid) {
+  const rec = HS.recordCache[uid];
+  if (!rec) return;
+  HS.modalRecord = rec;
   renderHotspot();
 }
 export function hsCloseModal() {
@@ -905,13 +975,9 @@ function drillDownHtml(row) {
   const tableRows = records.slice(0,200).map((r, i) => {
     const acc  = SRC_COLOR[r._src] || '#38bdf8';
     const desc = (r.desc || r.eventType || '—').slice(0, 80);
-    const rJson = JSON.stringify({
-      id:r.id, date:r.date, location:r.location, asset:r.asset, status:r.status,
-      priority:r.priority, desc:r.desc||'', _src:r._src, _service:r._service||'',
-      eventType:r.eventType||'', problemType:r.problemType||'',
-      category:r.category||'',
-    }).replace(/'/g,"\'");
-    return `<tr onclick="window._app.hsOpenModal('${rJson.replace(/"/g,'&quot;')}')"
+    const uid = (r._src + '_' + (r.id || i)).replace(/[^a-zA-Z0-9_-]/g, '_');
+    HS.recordCache[uid] = r;
+    return `<tr onclick='window._app.hsOpenModal("${uid}")'
       style="border-top:1px solid #0f1e30;cursor:pointer;background:${i%2===0?'transparent':'#060d18'};transition:background .1s"
       onmouseover="this.style.background='${acc}11'"
       onmouseout="this.style.background='${i%2===0?'transparent':'#060d18'}'">
