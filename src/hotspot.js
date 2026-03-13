@@ -325,7 +325,7 @@ function groupedTableHtml(groups) {
       ${row.PPM  > 0 ? `<div style="height:8px;background:#34d399;border-radius:0 2px 2px 0;width:${Math.max(2,row.PPM /maxTotal*100)}px"></div>` : ''}
     </div>`;
 
-    const mainRow = `<tr onclick="window._app.hsToggleDrill(${keyEsc})"
+    const mainRow = `<tr onclick='window._app.hsToggleDrill(${keyEsc})'
       style="border-top:1px solid #1e293b;cursor:pointer;transition:background .15s;
       background:${isExp?'#0d1f36':isHot&&i===0?'#1a0a0a':'transparent'}"
       onmouseover="if(!${isExp})this.style.background='#0d1f2a'"
@@ -822,7 +822,7 @@ function drillDownHtml(row) {
     const cnt    = s === 'All' ? row.records.length : row.records.filter(r => r._src === s).length;
     const active = srcFilter === s;
     const c      = SRC_COLOR[s] || '#f97316';
-    return `<button onclick="window._app.hsDrillSrc(${gkJson},'${s}')"
+    return `<button onclick='window._app.hsDrillSrc(${gkJson},"${s}")'
       style="padding:4px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;
       font-family:inherit;border:1px solid ${active?c:'#1e293b'};
       background:${active?c+'22':'transparent'};color:${active?c:'#64748b'};transition:all .15s">
@@ -831,7 +831,7 @@ function drillDownHtml(row) {
   }).join('');
 
   const resetBtn = (activeFilters > 0 || srcFilter !== 'All')
-    ? `<button onclick="window._app.hsDrillReset(${gkJson})"
+    ? `<button onclick='window._app.hsDrillReset(${gkJson})'
         style="padding:4px 12px;border-radius:6px;border:1px solid #f87171;background:#1a0a0a;
         color:#f87171;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">
         ✕ Reset
@@ -845,7 +845,7 @@ function drillDownHtml(row) {
     const color     = (isSorted || hasFilter) ? accent : '#475569';
     const sortIcon  = isSorted ? (sort.dir === 'asc' ? '↑' : '↓') : '↕';
     const sortBtn   = c.sortable
-      ? `<span onclick="window._app.hsDrillSort(${gkJson},'${c.key}')"
+      ? `<span onclick='window._app.hsDrillSort(${gkJson},"${c.key}")'
           style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;
           padding:2px 4px;border-radius:4px;background:${isSorted?'#f9731614':'transparent'}">
           ${c.label}
@@ -862,7 +862,7 @@ function drillDownHtml(row) {
       const curVal  = colFilters[c.key] || 'All';
       const filterDot = hasFilter ? '●' : '⌄';
       const dropdownItems = ['All', ...vals].map(v =>
-        `<div onclick="window._app.hsDrillColFilter(${gkJson},'${c.key}',${JSON.stringify(v)});event.stopPropagation()"
+        `<div onclick='window._app.hsDrillColFilter(${gkJson},"${c.key}",${JSON.stringify(v)});event.stopPropagation()'
           style="padding:7px 12px;border-radius:6px;cursor:pointer;font-size:12px;
           font-weight:${v===curVal?700:400};color:${v===curVal?accent:'#cbd5e1'};
           background:${v===curVal?'#1e293b':'transparent'}"
@@ -878,7 +878,7 @@ function drillDownHtml(row) {
             ${dropdownItems}
           </div>` : '';
       filterBtn = `<span style="position:relative;display:inline-block">
-        <button onclick="window._app.hsToggleColFilter(${gkJson},'${c.key}');event.stopPropagation()"
+        <button onclick='window._app.hsToggleColFilter(${gkJson},"${c.key}");event.stopPropagation()' 
           style="background:none;border:none;cursor:pointer;padding:0 2px;
           color:${hasFilter?accent:'#475569'};font-size:12px;font-family:inherit"
           title="Filter ${c.label}">${filterDot}</button>
