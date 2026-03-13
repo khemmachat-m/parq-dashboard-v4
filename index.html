@@ -1,25 +1,245 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PARQ Hotspot Analytics · JOB152</title>
-    <style>
-      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      body {
-        font-family: 'Outfit', system-ui, sans-serif;
-        background: #080f1a;
-        color: #e2e8f0;
-        min-height: 100vh;
-      }
-      ::-webkit-scrollbar { width: 6px; height: 6px; }
-      ::-webkit-scrollbar-track { background: #0a1628; }
-      ::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 3px; }
-    </style>
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PARQ Dashboard Generator · JLL · The PARQ · JOB152</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- ═════════════════════════════════════════════════════════════════
+     SETUP SCREEN
+═════════════════════════════════════════════════════════════════ -->
+<div id="setupScreen" style="display:none">
+  <div class="setup-badge">JLL · THE PARQ · JOB152</div>
+
+  <!-- STEP 1 — Select Folder -->
+  <div class="setup-card" id="stepCard1">
+    <div class="setup-step-indicator">
+      <div class="step-dot active" id="sd1"></div>
+      <div class="step-dot" id="sd2"></div>
+      <div class="step-dot" id="sd3"></div>
+    </div>
+    <div class="setup-h1">Welcome to PARQ<br>Dashboard Generator</div>
+    <p class="setup-sub">Let's set up your working folder. All master data and exported CSV files will be stored here and remembered on every visit.</p>
+
+    <div class="folder-hero" id="folderHero" onclick="window._app.setupSelectFolder()">
+      <div class="folder-hero-icon" id="folderHeroIcon">📁</div>
+      <div class="folder-hero-label" id="folderHeroLabel">Click to choose your working folder</div>
+      <div class="folder-hero-path hidden" id="folderHeroPath"></div>
+    </div>
+
+    <button class="btn-primary" id="btnStep1Next" disabled onclick="window._app.goStep(2)">
+      Next — Upload Master Data →
+    </button>
+    <button class="btn-secondary" onclick="window._app.skipSetup()" style="margin-top:8px;font-size:12px;color:var(--text-faint)">
+      Already set up? Reopen last session
+    </button>
+  </div>
+
+  <!-- STEP 2 — Upload Master Data -->
+  <div class="setup-card hidden" id="stepCard2">
+    <div class="setup-step-indicator">
+      <div class="step-dot done"></div>
+      <div class="step-dot active"></div>
+      <div class="step-dot"></div>
+    </div>
+    <div class="setup-h1">Upload Master Data Files</div>
+    <p class="setup-sub">These files from Mozart will be copied to your working folder and auto-loaded every time you open the app. Required files must be uploaded — optional files can be skipped.</p>
+
+    <div class="setup-progress-row" id="setupProgressRow">
+      <div class="prog-item"><span class="dot" style="background:var(--green)"></span> <span id="pgLoaded">0</span> loaded</div>
+      <div class="prog-item"><span class="dot" style="background:var(--req-color)"></span> <span id="pgReq">0/0</span> required</div>
+      <div class="prog-item"><span class="dot" style="background:var(--text-faint)"></span> <span id="pgOpt">0/0</span> optional</div>
+    </div>
+
+    <div class="upload-list" id="setupUploadList"></div>
+
+    <button class="btn-primary" id="btnStep2Next" disabled onclick="window._app.goStep(3)">
+      Next — Exported Files →
+    </button>
+    <button class="btn-secondary" onclick="window._app.goStep(1)">← Back</button>
+  </div>
+
+  <!-- STEP 3 — Upload Exported Files -->
+  <div class="setup-card hidden" id="stepCard3">
+    <div class="setup-step-indicator">
+      <div class="step-dot done"></div>
+      <div class="step-dot done"></div>
+      <div class="step-dot active"></div>
+    </div>
+    <div class="setup-h1">Upload Exported Files</div>
+    <p class="setup-sub">Upload your Mozart transaction CSV exports. Files will be copied to <strong id="finalFolderName" style="font-family:var(--mono);color:var(--purple)"></strong> and renamed to a standard filename automatically.</p>
+
+    <div class="tx-upload-grid" id="txUploadGrid"></div>
+
+    <div class="info-box" style="border-color:var(--green-border);background:var(--green-light);color:#166534;margin-bottom:16px">
+      <div class="info-title" style="color:var(--green)">💡 Tip — Auto-detection</div>
+      The app detects the file type from its name automatically.<br>
+      You can upload any or all files now — or skip and upload later in the main app.
+    </div>
+
+    <button class="btn-primary" onclick="window._app.completeSetup()">
+      🚀 Open Dashboard
+    </button>
+    <button class="btn-secondary" onclick="window._app.goStep(2)">← Back</button>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════
+     MAIN APP SCREEN
+═════════════════════════════════════════════════════════════════ -->
+<div id="appScreen" style="display:none">
+<div class="app-wrap">
+
+  <!-- Header -->
+  <div class="site-badge"><span>JLL · THE PARQ · JOB152</span></div>
+  <h1>PARQ Dashboard<br>Generator</h1>
+
+  <!-- Top bar: folder info + nav buttons -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:12px;background:var(--green-light);border:1.5px solid var(--green-border);">
+      <span style="font-size:18px">📁</span>
+      <div style="min-width:0">
+        <div id="appFolderName" style="font-size:13px;font-weight:800;color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
+        <div id="appFolderSub"  style="font-size:10.5px;color:#15803D;margin-top:1px">Loading…</div>
+      </div>
+    </div>
+    <button onclick="window._app.goBackToSetup()" style="padding:9px 14px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface);font-family:var(--font);font-size:12px;font-weight:700;color:var(--text-mid);cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.borderColor='var(--purple-mid)';this.style.color='var(--purple)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-mid)'">← Back to Setup</button>
+    <button onclick="window._app.changeFolder()" style="padding:9px 14px;border-radius:10px;border:1.5px solid var(--purple);background:var(--purple);font-family:var(--font);font-size:12px;font-weight:700;color:#fff;cursor:pointer;white-space:nowrap;transition:all .15s" onmouseover="this.style.background='#4C1D95'" onmouseout="this.style.background='var(--purple)'">📂 Change Folder</button>
+  </div>
+
+  <!-- Dataset tabs with status chips -->
+  <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+    <button class="tab-btn active" data-tab="cwo"   onclick="window._app.switchTab('cwo')">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700">🔧 CWO <span id="chip-cwo" class="tab-chip loading">Loading…</span></div>
+    </button>
+    <button class="tab-btn" data-tab="cases" onclick="window._app.switchTab('cases')">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700">📋 Cases <span id="chip-cases" class="tab-chip loading">Loading…</span></div>
+    </button>
+    <button class="tab-btn" data-tab="ppm"   onclick="window._app.switchTab('ppm')">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700">📅 PPM <span id="chip-ppm" class="tab-chip loading">Loading…</span></div>
+    </button>
+    <button class="tab-btn" data-tab="hotspot" onclick="window._app.switchTab('hotspot')"
+      style="border-color:#f9731644;color:#f97316">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700">🔥 Hotspot</div>
+    </button>
+  </div>
+
+  <!-- ── Hotspot panel (shown when Hotspot tab active) ─────────── -->
+  <div id="hotspotPanel" style="display:none"></div>
+
+  <!-- ── Report UI (CWO / Cases / PPM tabs) ────────────────────── -->
+  <div id="reportUI">
+
+  <!-- Auto-load spinner -->
+  <div id="autoLoadBar" style="display:flex;align-items:center;gap:10px;padding:14px 16px;margin-bottom:14px;border-radius:12px;background:var(--purple-pale);border:1.5px dashed #C4B5FD;">
+    <span style="font-size:22px;animation:spin 1s linear infinite;display:inline-block">⏳</span>
+    <div>
+      <div style="font-size:13px;font-weight:700;color:var(--purple)" id="autoLoadTitle">Loading enriched data…</div>
+      <div style="font-size:11px;color:var(--purple-mid);margin-top:2px" id="autoLoadSub">Reading files from working folder</div>
+    </div>
+  </div>
+
+  <!-- Data status bar (shown when enriched data is ready) -->
+  <div id="dataStatusBar" style="display:none;align-items:center;gap:12px;padding:14px 16px;margin-bottom:14px;border-radius:12px;border:1.5px solid var(--green-border);background:var(--green-light);">
+    <span style="font-size:24px">✅</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:700;color:var(--green)" id="dsbTitle">Ready</div>
+      <div style="font-size:11px;color:var(--text-faint);margin-top:2px" id="dsbSub">—</div>
+      <div style="display:flex;gap:16px;margin-top:8px" id="dsbStats"></div>
+    </div>
+    <label style="padding:7px 12px;border-radius:8px;font-size:11px;font-weight:700;font-family:var(--font);cursor:pointer;background:transparent;border:1.5px solid var(--border);color:var(--text-muted);transition:all .15s;flex-shrink:0;white-space:nowrap" onmouseover="this.style.borderColor='var(--orange)';this.style.color='var(--orange)';this.style.background='var(--orange-light)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)';this.style.background='transparent'">
+      🔄 Update data
+      <input type="file" id="txFileInput" accept=".csv" style="display:none" onchange="window._app.handleTxFile(this.files[0])">
+    </label>
+  </div>
+
+  <!-- No data bar -->
+  <div id="noDataBar" style="display:none;align-items:center;gap:12px;padding:14px 16px;margin-bottom:14px;border-radius:12px;border:1.5px dashed var(--border);background:var(--surface-2);">
+    <span style="font-size:24px">📂</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:700;color:var(--text-muted)" id="noDataTitle">No enriched data found</div>
+      <div style="font-size:11px;color:var(--text-faint);margin-top:2px">Go back to Setup → Upload Exported Files to generate enriched data</div>
+    </div>
+    <label style="padding:7px 12px;border-radius:8px;font-size:11px;font-weight:700;font-family:var(--font);cursor:pointer;background:var(--purple-light);border:1.5px solid #C4B5FD;color:var(--purple);transition:all .15s;flex-shrink:0;white-space:nowrap" onmouseover="this.style.background='var(--purple)';this.style.color='#fff'" onmouseout="this.style.background='var(--purple-light)';this.style.color='var(--purple)'">
+      ↑ Upload exported file
+      <input type="file" id="txFileInputEmpty" accept=".csv" style="display:none" onchange="window._app.handleTxFile(this.files[0])">
+    </label>
+  </div>
+
+  <!-- Step 1: Select Report Week -->
+  <div class="card" id="weekCard">
+    <div class="card-hd">
+      <div class="card-title"><span class="num">1</span> Select Report Week</div>
+    </div>
+    <p class="card-desc">Choose which week to report on — the most recent week is pre-selected automatically.</p>
+    <div class="section-label">Report week (week ends on Sunday)</div>
+    <select id="weekSelect" onchange="window._app.onWeekChange()">
+      <option value="">— loading enriched data… —</option>
+    </select>
+    <div class="week-boxes">
+      <div class="week-box sel">
+        <div class="week-box-lbl">Selected Week</div>
+        <div class="week-box-date" id="selWeekDates">—</div>
+      </div>
+      <div class="week-box">
+        <div class="week-box-lbl">Previous Week<br>(Comparison)</div>
+        <div class="week-box-date" id="cmpWeekDates">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Generate & Export -->
+  <div class="card" id="generateCard">
+    <div class="card-hd">
+      <div class="card-title"><span class="num">2</span> Generate &amp; Export</div>
+    </div>
+    <div class="action-grid">
+      <div class="action-item primary-action" onclick="window._app.runGenerate()">
+        <div class="action-icon">⚡</div>
+        <div class="action-label">Generate Dashboard</div>
+        <div class="action-sub">Opens enriched HTML report in a new tab</div>
+      </div>
+      <div class="action-item" onclick="window._app.runDownload()">
+        <div class="action-icon">⬇️</div>
+        <div class="action-label">Download Enriched CSV</div>
+        <div class="action-sub">Downloads the enriched CSV file</div>
+      </div>
+      <div class="action-item" onclick="window._app.runSaveLocal()">
+        <div class="action-icon">💾</div>
+        <div class="action-label">Save to Folder</div>
+        <div class="action-sub">Re-saves enriched CSV to working folder</div>
+      </div>
+    </div>
+    <div class="progress-wrap hidden" id="progressWrap">
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-lbl" id="progressLbl">Processing…</div>
+    </div>
+    <div id="resultBanner" class="hidden"></div>
+  </div>
+
+</div><!-- /reportUI -->
+
+</div>
+</div>
+
+<!-- Setup enrichment processing overlay -->
+<div class="setup-processing hidden" id="setupProcessingOverlay">
+  <div class="setup-processing-icon">⚙️</div>
+  <div class="setup-processing-title">Enriching Data…</div>
+  <div class="setup-processing-sub">Joining exported files with master data. Please wait.</div>
+  <div class="setup-proc-steps">
+    <div class="setup-proc-step" id="procStep-master"><span class="setup-proc-step-icon">🗄️</span> Saving master data files</div>
+    <div class="setup-proc-step" id="procStep-cwo">  <span class="setup-proc-step-icon">🔧</span> Enriching Corrective Work Orders</div>
+    <div class="setup-proc-step" id="procStep-cases"><span class="setup-proc-step-icon">📋</span> Enriching Case Management</div>
+    <div class="setup-proc-step" id="procStep-ppm">  <span class="setup-proc-step-icon">📅</span> Enriching PPM Work Orders</div>
+    <div class="setup-proc-step" id="procStep-save"> <span class="setup-proc-step-icon">💾</span> Saving enriched files to folder</div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
 </html>
