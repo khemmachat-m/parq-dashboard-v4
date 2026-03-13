@@ -107,6 +107,12 @@ function mapRow(raw, src) {
   const eventType   = r.EventType_Description || r.EventType_Name || r.EventTypeCode || '—';
   const problemType = r.ProblemType_Description || r.ProblemType_Name || r.ProblemType_Code || '—';
   const asset       = r.Asset_Name || r.AssetName || r.EquipmentTag || '—';
+  const assetModel  = r.Asset_Model || '';
+  const assetGroup  = [
+    r.Asset_Name || r.AssetName || r.EquipmentTag || '—',
+    r.Asset_Model || '',
+    r.Location_FullName || r.Location_Name || r.LocationName || r.Location || '',
+  ].filter(Boolean).join(' | ');
   const priority    = r.Priority_Name || r.PriorityName || '—';
   const category    = r.ServiceCategory_Name || r.PPM_Main_Category || '';
 
@@ -121,7 +127,7 @@ function mapRow(raw, src) {
   const desc = r.Description || r.ShortDescription || r.Subject || r.TaskName || '';
   const svc  = classifySvc({ asset, eventType, problemType, category });
 
-  return { id, date, location, eventType, problemType, asset, priority, status, desc, category, _service:svc, _src:src, _raw:raw };
+  return { id, date, location, eventType, problemType, asset, assetGroup, priority, status, desc, category, _service:svc, _src:src, _raw:raw };
 }
 
 // ─── Load data from S._enrichedCache ─────────────────────────────
@@ -144,7 +150,7 @@ function getTagged() {
 function getGroups(tagged) {
   const map = {};
   tagged.forEach(r => {
-    const key = r[HS.dim] || '—';
+    const key = (HS.dim === 'asset' ? r.assetGroup : r[HS.dim]) || '—';
     if (!map[key]) map[key] = { key, CWO:0, Case:0, PPM:0, total:0, records:[] };
     map[key][r._src]++;
     map[key].total++;
