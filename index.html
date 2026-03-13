@@ -92,11 +92,13 @@
      MAIN APP SCREEN
 ═════════════════════════════════════════════════════════════════ -->
 <div id="appScreen" style="display:none">
-<div class="app-wrap">
 
-  <!-- Header -->
-  <div class="site-badge"><span>JLL · THE PARQ · JOB152</span></div>
-  <h1>PARQ Dashboard<br>Generator</h1>
+  <!-- Narrow header wrap (always visible) -->
+  <div class="app-wrap">
+
+    <!-- Header -->
+    <div class="site-badge"><span>JLL · THE PARQ · JOB152</span></div>
+    <h1>PARQ Dashboard<br>Generator</h1>
 
   <!-- Top bar: folder info + nav buttons -->
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
@@ -112,7 +114,7 @@
   </div>
 
   <!-- Dataset tabs with status chips -->
-  <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+  <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:0">
     <button class="tab-btn active" data-tab="cwo"   onclick="window._app.switchTab('cwo')">
       <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700">🔧 CWO <span id="chip-cwo" class="tab-chip loading">Loading…</span></div>
     </button>
@@ -128,11 +130,14 @@
     </button>
   </div>
 
-  <!-- ── Hotspot panel (shown when Hotspot tab active) ─────────── -->
-  <div id="hotspotPanel" style="display:none"></div>
+  </div><!-- /app-wrap header -->
 
-  <!-- ── Report UI (CWO / Cases / PPM tabs) ────────────────────── -->
+  <!-- ── Hotspot panel — FULL WIDTH ────────────────────── -->
+  <div id="hotspotPanel" style="display:none;padding:20px 24px 64px"></div>
+
+  <!-- ── Report UI — narrow wrap (CWO / Cases / PPM) ──── -->
   <div id="reportUI">
+  <div class="app-wrap" style="padding-top:18px">
 
   <!-- Auto-load spinner -->
   <div id="autoLoadBar" style="display:flex;align-items:center;gap:10px;padding:14px 16px;margin-bottom:14px;border-radius:12px;background:var(--purple-pale);border:1.5px dashed #C4B5FD;">
@@ -221,9 +226,9 @@
     <div id="resultBanner" class="hidden"></div>
   </div>
 
+</div><!-- /inner app-wrap -->
 </div><!-- /reportUI -->
 
-</div>
 </div>
 
 <!-- Setup enrichment processing overlay -->
