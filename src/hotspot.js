@@ -634,14 +634,16 @@ function detailModalHtml(r) {
   };
 
   // Common fields (all sources)
+  const locationFull = f('', 'Location_FullName');
   const common = [
-    ['ID',           f(r.id)],
-    ['Source',       f(r._src)],
-    ['Date',         f(r.date)],
-    ['Location',     f(r.location, 'Location_FullName', 'Location_Name')],
-    ['Priority',     f(r.priority, 'Priority_Name')],
-    ['Status',       f(r.statusLabel || r.status, 'Status_Label', 'Status')],
-    ['Service',      f(r._service)],
+    ['ID',              f(r.id)],
+    ['Source',          f(r._src)],
+    ['Date',            f(r.date)],
+    ['Location',        f(r.location, 'Location_FullName', 'Location_Name')],
+    ['Location (Full)', locationFull !== f(r.location, 'Location_FullName', 'Location_Name') ? locationFull : ''],
+    ['Priority',        f(r.priority, 'Priority_Name')],
+    ['Status',          f(r.statusLabel || r.status, 'Status_Label', 'Status')],
+    ['Service',         f(r._service)],
   ];
 
   // Source-specific fields
@@ -658,7 +660,6 @@ function detailModalHtml(r) {
       ['Completion Comment',    f(r.completionComment, 'CompletionComment')],
       ['Closure Comment',       f(r.closureComment,    'ClosureComment')],
       ['Client Verification',   f(r.clientVerComment,  'ClientVerificationComment')],
-      ['Location (Full)',        f(r.location,          'Location_FullName')],
     ] : r._src === 'Case' ? [
       ['Asset Name',            f(r.asset,             'Asset_Name', 'EquipmentTag')],
       ['Asset Model',           f(r.assetModel,        'Asset_Model')],
@@ -666,7 +667,6 @@ function detailModalHtml(r) {
       ['Event Type',            f(r.eventType,         'EventType_Description', 'EventType_Name')],
       ['Short Description',     f(r.shortDesc,         'ShortDescription', 'ShortDesc')],
       ['Resolution',            f(r.resolution,        'Resolution')],
-      ['Location (Full)',        f(r.location,          'Location_FullName')],
     ] : [ // PPM
       ['Asset Name',            f(r.asset,             'Asset_Name', 'AssetName')],
       ['Asset Model',           f(r.assetModel,        'Asset_Model')],
