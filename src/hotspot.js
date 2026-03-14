@@ -433,20 +433,29 @@ function groupedTableHtml(groups) {
 
   return `
   <!-- Global Search -->
-  <div style="position:relative;margin-bottom:12px">
-    <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);
-      font-size:14px;color:#334155;pointer-events:none">⌕</span>
-    <input type="text" value="${(HS.tableSearch||'').replace(/"/g,'&quot;')}"
-      oninput="window._app.hsTableSearch(this.value)"
-      placeholder="Search all groups…"
-      style="width:100%;box-sizing:border-box;padding:9px 36px 9px 36px;
-      background:#080f1a;border:1.5px solid ${q?'#f97316':'#1e3a5f'};
-      border-radius:10px;color:#e2e8f0;font-size:13px;outline:none;
-      font-family:'DM Sans',sans-serif;transition:border-color .2s">
-    ${q ? `<button onclick="window._app.hsTableSearch('')"
-      style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
-      background:none;border:none;cursor:pointer;color:#f97316;font-size:16px;
-      line-height:1;font-family:inherit">×</button>` : ''}
+  <div style="position:relative;margin-bottom:12px;display:flex;gap:8px">
+    <div style="position:relative;flex:1">
+      <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);
+        font-size:14px;color:#334155;pointer-events:none">⌕</span>
+      <input id="hsSearchInput" type="text" value="${(HS.tableSearch||'').replace(/"/g,'&quot;')}"
+        onkeydown="if(event.key==='Enter')window._app.hsTableSearch(this.value)"
+        placeholder="Search all groups… (press Enter)"
+        style="width:100%;box-sizing:border-box;padding:9px 36px 9px 36px;
+        background:#080f1a;border:1.5px solid ${q?'#f97316':'#1e3a5f'};
+        border-radius:10px;color:#e2e8f0;font-size:13px;outline:none;
+        font-family:'DM Sans',sans-serif;transition:border-color .2s">
+      ${q ? `<button onclick="window._app.hsTableSearch('');document.getElementById('hsSearchInput').value=''"
+        style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+        background:none;border:none;cursor:pointer;color:#f97316;font-size:16px;
+        line-height:1;font-family:inherit">×</button>` : ''}
+    </div>
+    <button onclick="window._app.hsTableSearch(document.getElementById('hsSearchInput').value)"
+      style="padding:9px 18px;border-radius:10px;border:1.5px solid #f97316;
+      background:${q?'#f97316':'transparent'};color:${q?'#0f172a':'#f97316'};
+      font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;
+      white-space:nowrap;transition:all .15s">
+      Search
+    </button>
   </div>
 
   <div style="overflow-x:auto">
