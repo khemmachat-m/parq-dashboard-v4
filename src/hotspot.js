@@ -1181,12 +1181,12 @@ function patternsHtml(tagged) {
   }
 
   // Resolve selected set — null means all selected
-  const selSet = HS.patternCatSel; // null = all; Set = specific
-  const isAllSel = !selSet || selSet.size === 0;
+  const selSet = HS.patternCatSel; // null = all selected; Set = explicit selection
+  const isAllSel = selSet === null; // only null means "all selected"
 
   // Apply category filter
   let rows = srcRows;
-  if (src !== 'ALL' && selSet && selSet.size > 0) {
+  if (src !== 'ALL' && selSet !== null) {
     const field = CAT_FIELD[src];
     rows = srcRows.filter(r => selSet.has(r[field] || '—'));
   }
@@ -1208,7 +1208,7 @@ function patternsHtml(tagged) {
   let catBar = '';
   if (src !== 'ALL' && availCats.length > 0) {
     const catBtns = availCats.map(cat => {
-      const active = isAllSel || selSet.has(cat);
+      const active = selSet === null || selSet.has(cat);
       const esc    = JSON.stringify(cat);
       return `<button onclick="window._app.hsPatternCatToggle(${esc})"
         style="padding:3px 10px;border-radius:6px;font-size:10px;font-weight:700;
@@ -1220,7 +1220,7 @@ function patternsHtml(tagged) {
       </button>`;
     }).join('');
 
-    const numSel = isAllSel ? availCats.length : selSet.size;
+    const numSel = selSet === null ? availCats.length : selSet.size;
     catBar = `
     <div style="background:#080f1a;border:1px solid #1e293b;border-radius:10px;padding:10px 14px;margin-bottom:4px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
@@ -1706,15 +1706,15 @@ export function hsPatternSrc(src) {
   renderHotspot();
 }
 export function hsPatternCatToggle(cat) {
-  // If currently all selected (null), switching one off means we track a Set of selected
   const avail = _getPatternCats();
-  if (!HS.patternCatSel || HS.patternCatSel.size === 0) {
-    // Start with all selected, then remove this one
+  if (HS.patternCatSel === null) {
+    // Currently all selected — toggling one off: start with all, remove this one
     HS.patternCatSel = new Set(avail.filter(c => c !== cat));
   } else {
+    // Explicit Set — toggle membership
     const s = new Set(HS.patternCatSel);
     if (s.has(cat)) { s.delete(cat); } else { s.add(cat); }
-    // If all selected again, reset to null (all)
+    // If all items now selected, reset to null (canonical "all" state)
     HS.patternCatSel = s.size === avail.length ? null : s;
   }
   renderHotspot();
