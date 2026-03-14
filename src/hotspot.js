@@ -1227,7 +1227,7 @@ function patternsHtml(tagged) {
         <div style="border-radius:3px;width:22px;height:22px;background:${cellBg(v)};
           display:flex;align-items:center;justify-content:center;margin:auto;
           font-size:8px;font-weight:700;color:${v/overallMax>0.4?color:'transparent'};
-          outline:${ispeak?`2px solid ${color}`:'none'};box-sizing:border-box">
+          outline:${isPeak?`2px solid ${color}`:'none'};box-sizing:border-box">
           ${v > 0 ? v : ''}
         </div>
       </td>`;
@@ -1453,7 +1453,7 @@ function repeatHtml(tagged) {
       <table style="width:100%;border-collapse:collapse;min-width:640px">
         <thead>
           <tr style="background:#050c18">
-            ${['#','${view === "asset" ? "Asset" : "Location"}','Count','Score','Open','Top Source','Trend'].map(h =>
+            ${['#', view === 'asset' ? 'Asset' : 'Location','Count','Score','Open','Top Source','Trend'].map(h =>
               `<th style="padding:9px 12px;text-align:left;font-size:9px;font-weight:700;
               color:#475569;text-transform:uppercase;letter-spacing:1.2px;
               border-bottom:1px solid #1e293b;white-space:nowrap">${h}</th>`
