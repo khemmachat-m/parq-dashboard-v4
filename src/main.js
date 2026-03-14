@@ -21,6 +21,7 @@ import {
   hsDrillSort, hsDrillColFilter, hsToggleColFilter, hsDrillReset,
   hsOpenModal, hsCloseModal,
   hsTableSort, hsTableSearch, hsHeatmapTab, hsHeatmapSort, hsHeatmapDrill, hsHeatmapDrillClose,
+  hsHeatmapDrillSort, hsHeatmapDrillColFilter, hsHeatmapDrillColOpen, hsHeatmapDrillReset,
 } from './hotspot.js';
 
 // ── Expose all functions needed by inline HTML onclick handlers ───
@@ -66,6 +67,10 @@ window._app = {
   hsHeatmapSort,
   hsHeatmapDrill,
   hsHeatmapDrillClose,
+  hsHeatmapDrillSort,
+  hsHeatmapDrillColFilter,
+  hsHeatmapDrillColOpen,
+  hsHeatmapDrillReset,
 };
 
 // ── Init ─────────────────────────────────────────────────────────
