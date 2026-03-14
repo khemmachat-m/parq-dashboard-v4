@@ -667,6 +667,7 @@ function detailModalHtml(r) {
       ['Short Description',     f(r.shortDesc,         'ShortDescription', 'ShortDesc')],
       ['Resolution',            f(r.resolution,        'Resolution')],
     ] : [ // PPM
+      ['Location Custom',       f(r.locationCustom,    'Location_Custom')],
       ['Asset Name',            f(r.asset,             'Asset_Name', 'AssetName')],
       ['Asset Model',           f(r.assetModel,        'Asset_Model')],
       ['Asset Op. Status',      f(r.assetOpsStatus,    'Asset_OperationalStatus')],
@@ -675,7 +676,6 @@ function detailModalHtml(r) {
       ['PPM Main Category',     f(r.ppmMainCat,        'PPM_Main_Category')],
       ['PPM Task Category',     f(r.ppmTaskCat,        'PPM_Task_Category')],
       ['Status Label',          f(r.statusLabel,       'Status_Label')],
-      ['Location Custom',       f(r.locationCustom,    'Location_Custom')],
     ];
 
   const fields = [...common, ...specific]
