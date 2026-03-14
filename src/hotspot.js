@@ -29,6 +29,7 @@ export const HS = {
   heatmapDrillSort:   { col: 'date', dir: 'desc' },
   heatmapDrillFilter: {},   // { colKey: value }
   heatmapDrillColOpen: null, // colKey of open filter dropdown
+  heatmapSearch: '',         // global search query for heatmap
   pending:     { cwo:false, cases:false, ppm:false },
 };
 
@@ -1022,11 +1023,15 @@ function buildHeatmap(records, rowFn, colFn, rowLabel, colLabel, color, maxRows=
 
 function heatmapHtml(tagged) {
   const tab = HS.heatmapTab || 'case';
+  const sq  = (HS.heatmapSearch || '').trim().toLowerCase();
 
-  // Apply svcFilter — tagged is already date+svc filtered from getTagged()
-  // But for per-source heatmaps we also apply svcFilter per source
   const applyFilter = (src) => {
-    const base = tagged.filter(r => r._src === src);
+    let base = tagged.filter(r => r._src === src);
+    if (sq) base = base.filter(r => [
+      r.id, r.desc, r.asset, r.location, r.eventType,
+      r.problemType, r.ppmTaskCat, r.priority, r.status,
+      r.locationCustom, r.category,
+    ].some(v => v && String(v).toLowerCase().includes(sq)));
     return base;
   };
 
@@ -1075,19 +1080,45 @@ function heatmapHtml(tagged) {
     );
   }
 
+  const searchBar = `
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    <div style="position:relative;flex:1">
+      <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);
+        font-size:14px;color:#334155;pointer-events:none">⌕</span>
+      <input id="hsHeatmapSearchInput" type="text"
+        value="${(HS.heatmapSearch||'').replace(/"/g,'&quot;')}"
+        onkeydown="if(event.key==='Enter')window._app.hsHeatmapSearch(this.value)"
+        placeholder="Search transactions in this tab… (press Enter)"
+        style="width:100%;box-sizing:border-box;padding:8px 36px 8px 34px;
+        background:#050c18;border:1.5px solid ${sq?'#f97316':'#1e3a5f'};
+        border-radius:9px;color:#e2e8f0;font-size:12px;outline:none;
+        font-family:'DM Sans',sans-serif;transition:border-color .2s">
+      ${sq ? `<button onclick="window._app.hsHeatmapSearch('');document.getElementById('hsHeatmapSearchInput').value=''"
+        style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+        background:none;border:none;cursor:pointer;color:#f97316;font-size:16px;
+        line-height:1;font-family:inherit">×</button>` : ''}
+    </div>
+    <button onclick="window._app.hsHeatmapSearch(document.getElementById('hsHeatmapSearchInput').value)"
+      style="padding:8px 16px;border-radius:9px;border:1.5px solid #f97316;
+      background:${sq?'#f97316':'transparent'};color:${sq?'#0f172a':'#f97316'};
+      font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;
+      white-space:nowrap;transition:all .15s">Search</button>
+  </div>`;
+
   return `
   <div style="background:#080f1a;border:1px solid #1e293b;border-radius:14px;
     padding:20px;margin-bottom:16px">
-    <div style="margin-bottom:14px">
+    <div style="margin-bottom:12px">
       <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:10px">
         🗺️ Location × Category Heatmap
       </div>
       <!-- heatmap sub-tabs -->
-      <div style="display:flex;gap:2px;background:#050c18;border-radius:9px;padding:3px;
-        border:1px solid #1e293b;display:inline-flex">
+      <div style="display:inline-flex;gap:2px;background:#050c18;border-radius:9px;padding:3px;
+        border:1px solid #1e293b">
         ${tabBtns}
       </div>
     </div>
+    ${searchBar}
     ${heatContent}
   </div>`;
 }
@@ -1366,6 +1397,13 @@ export function hsHeatmapTab(val) {
   HS.heatmapDrillSort   = { col: 'date', dir: 'desc' };
   HS.heatmapDrillFilter = {};
   HS.heatmapDrillColOpen = null;
+  HS.heatmapSearch = '';
+  renderHotspot();
+}
+export function hsHeatmapSearch(val) {
+  HS.heatmapSearch = val;
+  HS.heatmapDrill  = null; // close drill panel on new search
+  HS.heatmapDrillFilter = {};
   renderHotspot();
 }
 export function hsHeatmapSort(col) {
