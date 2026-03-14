@@ -31,6 +31,7 @@ export const HS = {
   heatmapDrillColOpen: null, // colKey of open filter dropdown
   heatmapSearch: '',         // global search query for heatmap
   patternSrc:    'ALL',      // day-of-week pattern source filter
+  patternCatSel: null,       // null = all selected; Set of selected category strings
   repeatView:    'asset',    // repeat offender view: 'asset' | 'location'
   repeatThresh:  3,          // minimum incidents to qualify as repeat offender
   pending:     { cwo:false, cases:false, ppm:false },
@@ -1156,42 +1157,39 @@ function analyticsHtml(tagged) {
 
 // ─── Day-of-week Patterns ────────────────────────────────────────────────────
 
+// ─── Day-of-week Patterns ────────────────────────────────────────────────────
+
 function patternsHtml(tagged) {
   if (!tagged.length) return `<div style="text-align:center;padding:40px;color:#334155;font-size:13px">No records to analyse.</div>`;
 
-  const src = HS.patternSrc || 'ALL';
+  const src      = HS.patternSrc || 'ALL';
   const srcColor = { ALL:'#f97316', CWO:'#38bdf8', Case:'#a78bfa', PPM:'#34d399' };
-  const color = srcColor[src];
+  const color    = srcColor[src];
 
-  // Filter by source
-  const rows = src === 'ALL' ? tagged : tagged.filter(r => r._src === src);
+  // Category field per source
+  const CAT_FIELD = { CWO:'problemType', Case:'eventType', PPM:'ppmTaskCat' };
+  const CAT_LABEL = { CWO:'Problem Type', Case:'Event Type', PPM:'Task Category' };
 
-  const DAYS  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const HOURS = Array.from({length:24}, (_,i) => i);
+  // Source-filtered records (before category filter)
+  const srcRows = src === 'ALL' ? tagged : tagged.filter(r => r._src === src);
 
-  // Build day × hour matrix
-  const matrix = {};
-  DAYS.forEach(d => { matrix[d] = {}; HOURS.forEach(h => { matrix[d][h] = 0; }); });
+  // Available categories for current source
+  let availCats = [];
+  if (src !== 'ALL') {
+    const field = CAT_FIELD[src];
+    availCats = [...new Set(srcRows.map(r => r[field] || '—').filter(Boolean))].sort();
+  }
 
-  let peakVal = 0, peakDay = '', peakHour = 0;
+  // Resolve selected set — null means all selected
+  const selSet = HS.patternCatSel; // null = all; Set = specific
+  const isAllSel = !selSet || selSet.size === 0;
 
-  rows.forEach(r => {
-    if (!r.date) return;
-    // Try to get datetime from _raw
-    const raw = r._raw || {};
-    const dt = new Date(raw.CreatedOn || raw.PlannedDate || raw.ScheduledDate || r.date || '');
-    if (isNaN(dt)) return;
-    const dayIdx = (dt.getDay() + 6) % 7; // 0=Mon
-    const hour   = dt.getHours();
-    const d = DAYS[dayIdx];
-    matrix[d][hour]++;
-    if (matrix[d][hour] > peakVal) { peakVal = matrix[d][hour]; peakDay = d; peakHour = hour; }
-  });
-
-  // Day totals
-  const dayTotals = DAYS.map(d => ({ d, total: HOURS.reduce((s,h) => s + matrix[d][h], 0) }));
-  const maxDayTotal = Math.max(1, ...dayTotals.map(x => x.total));
-  const overallMax  = Math.max(1, peakVal);
+  // Apply category filter
+  let rows = srcRows;
+  if (src !== 'ALL' && selSet && selSet.size > 0) {
+    const field = CAT_FIELD[src];
+    rows = srcRows.filter(r => selSet.has(r[field] || '—'));
+  }
 
   // Source filter buttons
   const srcBtns = ['ALL','CWO','Case','PPM'].map(s => {
@@ -1202,12 +1200,71 @@ function patternsHtml(tagged) {
       style="padding:5px 14px;border-radius:8px;border:1.5px solid ${active?c:'#1e293b'};
       background:${active?c+'22':'transparent'};color:${active?c:'#64748b'};
       font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s">
-      ${s} <span style="opacity:.65;font-family:monospace">(${cnt})</span>
+      ${s} <span style="opacity:.65;font-family:monospace">(${cnt.toLocaleString()})</span>
     </button>`;
   }).join('');
 
-  // Heatmap cells
-  const cellBg = (val) => {
+  // Category filter bar (only shown when a specific source is active)
+  let catBar = '';
+  if (src !== 'ALL' && availCats.length > 0) {
+    const catBtns = availCats.map(cat => {
+      const active = isAllSel || selSet.has(cat);
+      const esc    = JSON.stringify(cat);
+      return `<button onclick="window._app.hsPatternCatToggle(${esc})"
+        style="padding:3px 10px;border-radius:6px;font-size:10px;font-weight:700;
+        font-family:inherit;cursor:pointer;transition:all .12s;white-space:nowrap;
+        border:1.5px solid ${active?color:'#1e3a5f'};
+        background:${active?color+'22':'transparent'};
+        color:${active?color:'#334155'}">
+        ${cat.length > 22 ? cat.slice(0,21)+'…' : cat}
+      </button>`;
+    }).join('');
+
+    const numSel = isAllSel ? availCats.length : selSet.size;
+    catBar = `
+    <div style="background:#080f1a;border:1px solid #1e293b;border-radius:10px;padding:10px 14px;margin-bottom:4px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:1px">
+          ${CAT_LABEL[src]}:
+        </span>
+        <span style="font-size:10px;color:${color};font-family:monospace">${numSel}/${availCats.length} selected</span>
+        <button onclick="window._app.hsPatternCatAll()"
+          style="padding:2px 9px;border-radius:5px;border:1px solid #1e3a5f;background:transparent;
+          color:#64748b;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Select all</button>
+        <button onclick="window._app.hsPatternCatNone()"
+          style="padding:2px 9px;border-radius:5px;border:1px solid #1e3a5f;background:transparent;
+          color:#64748b;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Deselect all</button>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">${catBtns}</div>
+    </div>`;
+  }
+
+  // Build day × hour matrix
+  const DAYS  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const HOURS = Array.from({length:24}, (_,i) => i);
+
+  const matrix = {};
+  DAYS.forEach(d => { matrix[d] = {}; HOURS.forEach(h => { matrix[d][h] = 0; }); });
+
+  let peakVal = 0, peakDay = '', peakHour = 0;
+
+  rows.forEach(r => {
+    if (!r.date) return;
+    const raw = r._raw || {};
+    const dt  = new Date(raw.CreatedOn || raw.PlannedDate || raw.ScheduledDate || r.date || '');
+    if (isNaN(dt)) return;
+    const dayIdx = (dt.getDay() + 6) % 7;
+    const hour   = dt.getHours();
+    const d = DAYS[dayIdx];
+    matrix[d][hour]++;
+    if (matrix[d][hour] > peakVal) { peakVal = matrix[d][hour]; peakDay = d; peakHour = hour; }
+  });
+
+  const dayTotals  = DAYS.map(d => ({ d, total: HOURS.reduce((s,h) => s + matrix[d][h], 0) }));
+  const maxDayTotal = Math.max(1, ...dayTotals.map(x => x.total));
+  const overallMax  = Math.max(1, peakVal);
+
+  const cellBg = val => {
     if (!val) return 'transparent';
     const t = val / overallMax;
     const alpha = Math.round(20 + t * 215).toString(16).padStart(2,'0');
@@ -1215,8 +1272,7 @@ function patternsHtml(tagged) {
   };
 
   const hourLabels = HOURS.map(h =>
-    `<th style="padding:3px 2px;font-size:9px;color:#334155;font-weight:400;
-      text-align:center;min-width:22px">${h === 0 ? '0' : h % 2 === 0 ? h : ''}</th>`
+    `<th style="padding:3px 2px;font-size:9px;color:#334155;font-weight:400;text-align:center;min-width:22px">${h === 0 ? '0' : h % 2 === 0 ? h : ''}</th>`
   ).join('');
 
   const heatRows = DAYS.map(d => {
@@ -1251,35 +1307,36 @@ function patternsHtml(tagged) {
     return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
       <div style="font-size:10px;color:${color};font-family:monospace;font-weight:700">${total > 0 ? total : ''}</div>
       <div style="flex:1;width:100%;display:flex;flex-direction:column;justify-content:flex-end;min-height:80px">
-        <div style="background:${color}${isMax?'ff':'66'};border-radius:3px 3px 0 0;width:100%;height:${pct}%;min-height:${total>0?3:0}px;transition:height .3s"></div>
+        <div style="background:${color}${isMax?'ff':'66'};border-radius:3px 3px 0 0;width:100%;height:${pct}%;min-height:${total>0?3:0}px"></div>
       </div>
       <div style="font-size:10px;font-weight:700;color:${isWeekend?'#475569':'#94a3b8'}">${d}</div>
     </div>`;
   }).join('');
 
-  // Peak callout
   const peakCallout = peakVal > 0 ? `
     <div style="display:inline-flex;align-items:center;gap:8px;background:#1a0a00;
-      border:1px solid ${color}44;border-radius:10px;padding:8px 16px;margin-bottom:16px">
+      border:1px solid ${color}44;border-radius:10px;padding:8px 16px;margin-bottom:14px">
       <span style="font-size:16px">🔥</span>
       <span style="font-size:13px;color:#e2e8f0">Peak: <strong style="color:${color}">${peakDay} ${String(peakHour).padStart(2,'0')}:00–${String(peakHour+1).padStart(2,'0')}:00</strong>
-        with <strong style="color:${color}">${peakVal}</strong> incidents</span>
+        · <strong style="color:${color}">${peakVal}</strong> incidents</span>
+      ${rows.length !== srcRows.length ? `<span style="font-size:10px;color:#475569">(${rows.length.toLocaleString()} of ${srcRows.length.toLocaleString()} records)</span>` : ''}
     </div>` : '';
 
   return `
-  <div style="display:flex;flex-direction:column;gap:16px">
+  <div style="display:flex;flex-direction:column;gap:12px">
     <!-- Source filter -->
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1px">Source:</span>
       ${srcBtns}
     </div>
 
+    <!-- Category filter -->
+    ${catBar}
+
     ${peakCallout}
 
-    <!-- Heatmap + Day bars side by side -->
+    <!-- Heatmap + Day bars -->
     <div style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start">
-
-      <!-- Day × Hour heatmap -->
       <div style="background:#080f1a;border:1px solid #1e293b;border-radius:12px;padding:16px;overflow-x:auto">
         <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:12px">Day × Hour heatmap</div>
         <table style="border-collapse:collapse">
@@ -1292,19 +1349,16 @@ function patternsHtml(tagged) {
           </thead>
           <tbody>${heatRows}</tbody>
         </table>
-        <div style="margin-top:8px;font-size:10px;color:#334155">Hour labels shown every 2h · deeper ${src === 'ALL' ? 'orange' : 'color'} = more incidents · timezone = UTC from Mozart export</div>
+        <div style="margin-top:8px;font-size:10px;color:#334155">Hour labels shown every 2h · deeper color = more incidents · timezone = UTC from Mozart export</div>
       </div>
-
-      <!-- Day bar chart -->
       <div style="background:#080f1a;border:1px solid #1e293b;border-radius:12px;padding:16px;min-width:200px">
         <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:12px">Busiest days</div>
-        <div style="display:flex;gap:4px;align-items:flex-end;height:120px">
-          ${dayBars}
-        </div>
+        <div style="display:flex;gap:4px;align-items:flex-end;height:120px">${dayBars}</div>
       </div>
     </div>
   </div>`;
 }
+
 
 // ─── Repeat Offender Tracker ──────────────────────────────────────────────────
 
@@ -1647,7 +1701,39 @@ export function hsSubTab(tab) {
   HS.subTab = tab; renderHotspot();
 }
 export function hsPatternSrc(src) {
-  HS.patternSrc = src; renderHotspot();
+  HS.patternSrc    = src;
+  HS.patternCatSel = null; // reset category selection when source changes
+  renderHotspot();
+}
+export function hsPatternCatToggle(cat) {
+  // If currently all selected (null), switching one off means we track a Set of selected
+  const avail = _getPatternCats();
+  if (!HS.patternCatSel || HS.patternCatSel.size === 0) {
+    // Start with all selected, then remove this one
+    HS.patternCatSel = new Set(avail.filter(c => c !== cat));
+  } else {
+    const s = new Set(HS.patternCatSel);
+    if (s.has(cat)) { s.delete(cat); } else { s.add(cat); }
+    // If all selected again, reset to null (all)
+    HS.patternCatSel = s.size === avail.length ? null : s;
+  }
+  renderHotspot();
+}
+export function hsPatternCatAll() {
+  HS.patternCatSel = null;
+  renderHotspot();
+}
+export function hsPatternCatNone() {
+  HS.patternCatSel = new Set(); // empty = nothing selected
+  renderHotspot();
+}
+function _getPatternCats() {
+  const src = HS.patternSrc || 'ALL';
+  if (src === 'ALL') return [];
+  const tagged = getTagged();
+  const field  = { CWO:'problemType', Case:'eventType', PPM:'ppmTaskCat' }[src];
+  const rows   = tagged.filter(r => r._src === src);
+  return [...new Set(rows.map(r => r[field] || '—').filter(Boolean))].sort();
 }
 export function hsRepeatView(view) {
   HS.repeatView = view; renderHotspot();
