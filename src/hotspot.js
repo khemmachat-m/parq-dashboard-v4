@@ -424,7 +424,7 @@ function groupedTableHtml(groups) {
     </tr>`;
 
     const drillRow = isExp ? `<tr><td colspan="8" style="padding:0;background:#050c18">
-      ${drillDownHtml(row)}
+      ${drillDownHtml(row, q)}
     </td></tr>` : '';
 
     return mainRow + drillRow;
@@ -1081,7 +1081,7 @@ function getFilterValues(records, colKey) {
   return vals.sort();
 }
 
-function drillDownHtml(row) {
+function drillDownHtml(row, searchQ = '') {
   const gk      = row.key;
   const gkJson  = JSON.stringify(gk);
   const srcFilter   = HS.drillSrc[gk]    || 'All';
@@ -1089,8 +1089,17 @@ function drillDownHtml(row) {
   const colFilters  = HS.drillFilter[gk] || {};
   const activeFilters = Object.values(colFilters).filter(v => v && v !== 'All').length;
 
+  // Pre-filter by search query if active
+  const q = searchQ.trim().toLowerCase();
+  const baseRecords = q
+    ? row.records.filter(r => [
+        r.id, r.desc, r.asset, r.location, r.eventType,
+        r.problemType, r.priority, r.status, r._src,
+      ].some(v => v && String(v).toLowerCase().includes(q)))
+    : row.records;
+
   // Filter by source
-  let records = srcFilter === 'All' ? row.records : row.records.filter(r => r._src === srcFilter);
+  let records = srcFilter === 'All' ? baseRecords : baseRecords.filter(r => r._src === srcFilter);
   // Apply column filters
   Object.entries(colFilters).forEach(([k, v]) => {
     if (!v || v === 'All') return;
@@ -1107,9 +1116,9 @@ function drillDownHtml(row) {
     return sort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
   });
 
-  // Source filter chips
+  // Source filter chips — counts based on search-filtered base
   const srcBtns = ['All','CWO','Case','PPM'].map(s => {
-    const cnt    = s === 'All' ? row.records.length : row.records.filter(r => r._src === s).length;
+    const cnt    = s === 'All' ? baseRecords.length : baseRecords.filter(r => r._src === s).length;
     const active = srcFilter === s;
     const c      = SRC_COLOR[s] || '#f97316';
     return `<button onclick='window._app.hsDrillSrc(${gkJson},"${s}")'
@@ -1225,7 +1234,7 @@ function drillDownHtml(row) {
       ${resetBtn}
       <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
         ${activeFilters > 0 ? `<span style="font-size:11px;color:#f97316;font-weight:700">${activeFilters} filter${activeFilters>1?'s':''} active</span>` : ''}
-        <span style="font-size:11px;color:#334155;font-family:monospace">${records.length}/${row.records.length} records</span>
+        <span style="font-size:11px;color:#334155;font-family:monospace">${records.length}/${baseRecords.length} records${q ? ` <span style="color:#f97316">(search filtered)</span>` : ''}</span>
       </div>
     </div>
     <!-- Table -->
