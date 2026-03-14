@@ -593,6 +593,125 @@ function svcMixHtml(tagged) {
   </div>`;
 }
 
+function heatmapHtml(tagged) {
+  // Build location × source count matrix — always use all CWO+Case+PPM regardless of svcFilter
+  const all = [...HS.data.cwo, ...HS.data.cases, ...HS.data.ppm];
+  const dateFiltered = all.filter(r => {
+    if (HS.dateFrom && r.date < HS.dateFrom) return false;
+    if (HS.dateTo   && r.date > HS.dateTo)   return false;
+    return true;
+  });
+
+  // Count per location
+  const locTotals = {};
+  dateFiltered.forEach(r => {
+    const loc = r.location || '—';
+    locTotals[loc] = (locTotals[loc] || 0) + 1;
+  });
+  const topLocs = Object.entries(locTotals)
+    .sort((a,b) => b[1]-a[1]).slice(0,25).map(([l]) => l);
+
+  if (!topLocs.length) return '';
+
+  const srcs = ['CWO','Case','PPM'];
+  const srcColor = { CWO:'#38bdf8', Case:'#a78bfa', PPM:'#34d399' };
+
+  // Build matrix[loc][src] = count
+  const matrix = {};
+  topLocs.forEach(loc => { matrix[loc] = { CWO:0, Case:0, PPM:0, total:0 }; });
+  dateFiltered.forEach(r => {
+    const loc = r.location || '—';
+    if (!matrix[loc]) return;
+    matrix[loc][r._src] = (matrix[loc][r._src] || 0) + 1;
+    matrix[loc].total   = (matrix[loc].total   || 0) + 1;
+  });
+
+  // Per-source max for independent color scaling
+  const srcMax = {};
+  srcs.forEach(s => {
+    srcMax[s] = Math.max(1, ...topLocs.map(loc => matrix[loc][s]));
+  });
+  const totalMax = Math.max(1, ...topLocs.map(loc => matrix[loc].total));
+
+  // Hex opacity based on intensity 0–1
+  const cellBg = (src, val) => {
+    const t = val / srcMax[src];
+    if (t === 0) return 'transparent';
+    const alpha = Math.round(15 + t * 200).toString(16).padStart(2,'0');
+    return srcColor[src] + alpha;
+  };
+  const cellText = (src, val) => {
+    const t = val / srcMax[src];
+    return t > 0.15 ? (srcColor[src]) : '#1e3a5f';
+  };
+  const totalBg = val => {
+    const t = val / totalMax;
+    if (t === 0) return 'transparent';
+    const alpha = Math.round(15 + t * 200).toString(16).padStart(2,'0');
+    return '#f97316' + alpha;
+  };
+
+  const headerCells = srcs.map(s =>
+    `<th style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:1.3px;
+      text-transform:uppercase;color:${srcColor[s]};text-align:center;white-space:nowrap;
+      border-bottom:2px solid ${srcColor[s]}44">${s}</th>`
+  ).join('') +
+  `<th style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:1.3px;
+    text-transform:uppercase;color:#f97316;text-align:center;white-space:nowrap;
+    border-bottom:2px solid #f9731644">TOTAL</th>`;
+
+  const dataRows = topLocs.map((loc, i) => {
+    const row = matrix[loc];
+    const srcCells = srcs.map(s => {
+      const v = row[s] || 0;
+      return `<td style="padding:7px 14px;text-align:center;font-size:12px;font-weight:${v>0?700:400};
+        font-family:monospace;color:${v>0?cellText(s,v):'#1e3a5f'};
+        background:${cellBg(s,v)};border-radius:4px;transition:background .2s">
+        ${v > 0 ? v.toLocaleString() : '·'}
+      </td>`;
+    }).join('');
+    const total = row.total || 0;
+    return `<tr style="border-top:1px solid #0f1e30">
+      <td style="padding:7px 12px;font-size:12px;color:#94a3b8;white-space:nowrap;
+        max-width:260px;overflow:hidden;text-overflow:ellipsis;
+        font-weight:${i<3?700:400};color:${i===0?'#f87171':i<3?'#f97316':'#94a3b8'}"
+        title="${loc.replace(/"/g,'&quot;')}">
+        ${i<3?`<span style="font-size:9px;margin-right:4px">${['🔥','②','③'][i]}</span>`:''}${loc}
+      </td>
+      ${srcCells}
+      <td style="padding:7px 14px;text-align:center;font-size:12px;font-weight:700;
+        font-family:monospace;color:${total>0?'#f97316':'#1e3a5f'};
+        background:${totalBg(total)};border-radius:4px">
+        ${total > 0 ? total.toLocaleString() : '·'}
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div style="background:#080f1a;border:1px solid #1e293b;border-radius:14px;
+    padding:20px;margin-bottom:16px;overflow-x:auto">
+    <div style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:2px">
+        🗺️ Location × Source Heatmap
+      </div>
+      <div style="font-size:11px;color:#475569">
+        Top 25 locations · Color intensity = count relative to each source's max
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:separate;border-spacing:2px;min-width:480px">
+      <thead>
+        <tr style="background:#050c18">
+          <th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;
+            letter-spacing:1.3px;text-transform:uppercase;color:#475569;
+            border-bottom:2px solid #1e293b">Location</th>
+          ${headerCells}
+        </tr>
+      </thead>
+      <tbody>${dataRows}</tbody>
+    </table>
+  </div>`;
+}
+
 function analyticsHtml(tagged) {
   if (!tagged.length) return `<div style="text-align:center;padding:40px;color:#334155;font-size:13px">
     No records to analyse. Adjust your filters.
@@ -607,6 +726,7 @@ function analyticsHtml(tagged) {
 
   return `
   ${kpiHtml(tagged)}
+  ${heatmapHtml(tagged)}
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px">
     ${trendChartHtml(tagged)}
     ${hBarChartHtml('📍 Top Locations','Top 10 by total count',locs,'#38bdf8')}
