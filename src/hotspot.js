@@ -310,6 +310,9 @@ function controlsHtml(tagged, groups) {
   const soft = [...HS.data.cwo, ...HS.data.cases, ...HS.data.ppm].filter(r => r._service === 'Soft').length;
   const all  = hard + soft;
 
+  const hasDate = HS.dateFrom || HS.dateTo;
+  const summary = `${tagged.length.toLocaleString()} records${HS.subTab==='table'?' · '+groups.length+' groups':''}`;
+
   const svcBtns = [
     { val:'ALL',  label:'🌐 All Services',  count: all,  color:'#e2e8f0' },
     { val:'Hard', label:'⚙️ Hard Service',  count: hard, color:'#38bdf8' },
