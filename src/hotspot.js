@@ -24,6 +24,7 @@ export const HS = {
   tableSort:   { col:'total', dir:'desc' },  // grouped table sort
   tableSearch: '',                           // grouped table global search
   heatmapTab:  'case',                       // 'case' | 'cwo' | 'ppm'
+  heatmapSort: { col: '__total__', dir: 'desc' }, // heatmap column sort
   pending:     { cwo:false, cases:false, ppm:false },
 };
 
@@ -723,11 +724,28 @@ function buildHeatmap(records, rowFn, colFn, rowLabel, colLabel, color, maxRows=
     colCounts[col] = (colCounts[col] || 0) + 1;
   });
 
-  // Top rows by total
-  const rowTotals = Object.entries(matrix).map(([k, v]) => [k, Object.values(v).reduce((a,b)=>a+b,0)]);
-  const topRows = rowTotals.sort((a,b)=>b[1]-a[1]).slice(0,maxRows).map(([k])=>k);
   // Top cols by total
   const topCols = Object.entries(colCounts).sort((a,b)=>b[1]-a[1]).slice(0,maxCols).map(([k])=>k);
+
+  // Row totals
+  const rowTotals = Object.entries(matrix).map(([k, v]) => [k, Object.values(v).reduce((a,b)=>a+b,0)]);
+
+  // Apply sort
+  const { col: sortCol, dir: sortDir } = HS.heatmapSort;
+  const sorted = [...rowTotals].sort((a, b) => {
+    let av, bv;
+    if (sortCol === '__total__') {
+      av = a[1]; bv = b[1];
+    } else if (sortCol === '__row__') {
+      av = a[0].toLowerCase(); bv = b[0].toLowerCase();
+      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    } else {
+      av = (matrix[a[0]] || {})[sortCol] || 0;
+      bv = (matrix[b[0]] || {})[sortCol] || 0;
+    }
+    return sortDir === 'asc' ? av - bv : bv - av;
+  });
+  const topRows = sorted.slice(0, maxRows).map(([k]) => k);
 
   if (!topRows.length || !topCols.length) return `<div style="text-align:center;padding:24px;color:#334155;font-size:13px">No data.</div>`;
 
@@ -742,22 +760,58 @@ function buildHeatmap(records, rowFn, colFn, rowLabel, colLabel, color, maxRows=
     return color + alpha;
   };
 
-  const thCols = topCols.map(c =>
-    `<th style="padding:6px 8px;font-size:9px;font-weight:700;color:${color};
+  // Sort icon helper
+  const sortIcon = (key) => {
+    if (sortCol !== key) return `<span style="font-size:8px;opacity:.35;margin-left:2px">↕</span>`;
+    return `<span style="font-size:8px;margin-left:2px;color:${color}">${sortDir === 'asc' ? '↑' : '↓'}</span>`;
+  };
+
+  // Row label header (clickable)
+  const thRow = `<th onclick='window._app.hsHeatmapSort("__row__")'
+    style="padding:6px 10px;text-align:left;font-size:9px;font-weight:700;
+    color:${sortCol==='__row__'?color:'#475569'};text-transform:uppercase;letter-spacing:.8px;
+    border-bottom:2px solid ${sortCol==='__row__'?color:'#1e293b'};cursor:pointer;user-select:none;
+    white-space:nowrap">
+    ${rowLabel} ${sortIcon('__row__')}
+  </th>`;
+
+  // Column headers (clickable)
+  const thCols = topCols.map(c => {
+    const active = sortCol === c;
+    const label  = c.length > 14 ? c.slice(0, 13) + '…' : c;
+    return `<th onclick='window._app.hsHeatmapSort(${JSON.stringify(c)})'
+      style="padding:6px 8px;font-size:9px;font-weight:700;
+      color:${active ? color : '#475569'};
       text-transform:uppercase;letter-spacing:.8px;white-space:nowrap;
       max-width:110px;overflow:hidden;text-overflow:ellipsis;text-align:center;
-      border-bottom:2px solid ${color}44;writing-mode:horizontal-tb"
-      title="${c.replace(/"/g,'&quot;')}">${c.length>16?c.slice(0,15)+'…':c}</th>`
-  ).join('');
+      border-bottom:2px solid ${active ? color : '#1e293b'};
+      cursor:pointer;user-select:none;transition:color .15s"
+      title="${c.replace(/"/g,'&quot;')}">
+      ${label} ${sortIcon(c)}
+    </th>`;
+  }).join('');
+
+  // Total header (clickable)
+  const thTotal = `<th onclick='window._app.hsHeatmapSort("__total__")'
+    style="padding:6px 10px;font-size:9px;font-weight:700;
+    color:${sortCol==='__total__'?color:'#475569'};
+    text-transform:uppercase;letter-spacing:.8px;text-align:right;
+    border-bottom:2px solid ${sortCol==='__total__'?color:'#1e293b'};
+    cursor:pointer;user-select:none;white-space:nowrap">
+    Total ${sortIcon('__total__')}
+  </th>`;
 
   const dataRows = topRows.map((row, i) => {
     const rowTotal = topCols.reduce((s,c)=>s+((matrix[row]||{})[c]||0),0);
     const cells = topCols.map(col => {
       const v = (matrix[row]||{})[col] || 0;
+      const isActiveCol = sortCol === col;
       return `<td style="padding:5px 8px;text-align:center;font-size:11px;font-weight:${v?700:400};
         font-family:monospace;color:${v?color:'#1e3a5f'};background:${cellBg(col,v)};
-        border-radius:3px;white-space:nowrap">${v||'·'}</td>`;
+        border-radius:3px;white-space:nowrap;
+        outline:${isActiveCol?`1px solid ${color}44`:'none'}">${v||'·'}</td>`;
     }).join('');
+    const isTotalSort = sortCol === '__total__';
     return `<tr style="border-top:1px solid #0a1628">
       <td style="padding:5px 10px;font-size:11px;white-space:nowrap;max-width:200px;
         overflow:hidden;text-overflow:ellipsis;
@@ -767,7 +821,8 @@ function buildHeatmap(records, rowFn, colFn, rowLabel, colLabel, color, maxRows=
       </td>
       ${cells}
       <td style="padding:5px 10px;font-family:monospace;font-size:11px;font-weight:700;
-        color:${color};text-align:right">${rowTotal}</td>
+        color:${color};text-align:right;
+        background:${isTotalSort?color+'11':'transparent'}">${rowTotal}</td>
     </tr>`;
   }).join('');
 
@@ -777,18 +832,12 @@ function buildHeatmap(records, rowFn, colFn, rowLabel, colLabel, color, maxRows=
   return `
   <div style="overflow-x:auto">
     <div style="font-size:10px;color:#475569;margin-bottom:8px">
-      ${records.length.toLocaleString()} records · Top ${topRows.length} ${rowLabel}s × Top ${topCols.length} ${colLabel}s · Color scales per column${svcNote}
+      ${records.length.toLocaleString()} records · Top ${topRows.length} ${rowLabel}s × Top ${topCols.length} ${colLabel}s · Click any header to sort${svcNote}
     </div>
     <table style="width:100%;border-collapse:separate;border-spacing:2px;min-width:500px">
       <thead>
         <tr style="background:#050c18">
-          <th style="padding:6px 10px;text-align:left;font-size:9px;font-weight:700;
-            color:#475569;text-transform:uppercase;letter-spacing:.8px;
-            border-bottom:2px solid #1e293b">${rowLabel}</th>
-          ${thCols}
-          <th style="padding:6px 10px;font-size:9px;font-weight:700;color:#475569;
-            text-transform:uppercase;letter-spacing:.8px;text-align:right;
-            border-bottom:2px solid #1e293b">Total</th>
+          ${thRow}${thCols}${thTotal}
         </tr>
       </thead>
       <tbody>${dataRows}</tbody>
@@ -1137,6 +1186,15 @@ export function hsTableSearch(val) {
 }
 export function hsHeatmapTab(val) {
   HS.heatmapTab = val;
+  HS.heatmapSort = { col: '__total__', dir: 'desc' }; // reset sort on tab change
+  renderHotspot();
+}
+export function hsHeatmapSort(col) {
+  const cur = HS.heatmapSort;
+  HS.heatmapSort = {
+    col,
+    dir: cur.col === col ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'desc',
+  };
   renderHotspot();
 }
 // ─── Drill-down sub-table (with sort / col-filter / detail modal) ────────────
