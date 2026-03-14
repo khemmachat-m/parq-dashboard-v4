@@ -21,6 +21,8 @@ export const HS = {
   colFilterOpen: null,       // 'groupKey::colKey' currently open dropdown
   modalRecord: null,         // record shown in detail modal
   recordCache: {},            // { uid: full record } for modal lookup
+  tableSort:   { col:'total', dir:'desc' },  // grouped table sort
+  tableSearch: '',                           // grouped table global search
   pending:     { cwo:false, cases:false, ppm:false },
 };
 
@@ -341,10 +343,44 @@ function controlsHtml(tagged, groups) {
 
 // ─── Grouped table ────────────────────────────────────────────────
 function groupedTableHtml(groups) {
-  const maxTotal = groups[0]?.total || 1;
+  // ── Search filter ──
+  const q = (HS.tableSearch || '').trim().toLowerCase();
+  const filtered = q
+    ? groups.filter(row => row.key.toLowerCase().includes(q))
+    : groups;
+
+  // ── Sort ──
+  const { col, dir } = HS.tableSort;
+  const sorted = [...filtered].sort((a, b) => {
+    let av, bv;
+    if (col === 'group') {
+      av = (a.key || '').toLowerCase();
+      bv = (b.key || '').toLowerCase();
+      return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    }
+    av = col === 'cwo' ? a.CWO : col === 'case' ? a.Case : col === 'ppm' ? a.PPM : a.total;
+    bv = col === 'cwo' ? b.CWO : col === 'case' ? b.Case : col === 'ppm' ? b.PPM : b.total;
+    return dir === 'asc' ? av - bv : bv - av;
+  });
+
+  const maxTotal = (groups[0]?.total) || 1;
   const THRESH = 2;
 
-  const rows = groups.map((row, i) => {
+  // ── Sort header helper ──
+  const thSort = (label, key, align='left') => {
+    const active = col === key;
+    const icon   = active ? (dir === 'asc' ? '↑' : '↓') : '↕';
+    return `<th onclick='window._app.hsTableSort("${key}")'
+      style="padding:9px 12px;text-align:${align};font-size:10px;font-weight:700;
+      text-transform:uppercase;letter-spacing:1.5px;white-space:nowrap;cursor:pointer;
+      user-select:none;color:${active?'#f97316':'#475569'};
+      border-bottom:${active?'2px solid #f97316':'2px solid transparent'};
+      transition:color .15s">
+      ${label} <span style="font-size:9px;opacity:.7">${icon}</span>
+    </th>`;
+  };
+
+  const rows = sorted.map((row, i) => {
     const isHot = row.total >= THRESH;
     const isExp = HS.expandedKey === row.key;
     const keyEsc = JSON.stringify(row.key).replace(/'/g, "\\'");
@@ -386,29 +422,58 @@ function groupedTableHtml(groups) {
     return mainRow + drillRow;
   }).join('');
 
-  const empty = groups.length === 0 ?
-    `<tr><td colspan="8" style="text-align:center;padding:40px;color:#334155;font-size:13px">No records match the current filters.</td></tr>` : '';
+  const empty = sorted.length === 0
+    ? `<tr><td colspan="8" style="text-align:center;padding:40px;color:#334155;font-size:13px">
+        ${q ? `No groups match "<span style="color:#f97316">${q}</span>"` : 'No records match the current filters.'}
+      </td></tr>` : '';
+
+  const matchInfo = q
+    ? `<span style="color:#f97316;font-weight:700">${sorted.length}</span> of ${groups.length} groups`
+    : `${groups.length} groups`;
 
   return `
+  <!-- Global Search -->
+  <div style="position:relative;margin-bottom:12px">
+    <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);
+      font-size:14px;color:#334155;pointer-events:none">⌕</span>
+    <input type="text" value="${(HS.tableSearch||'').replace(/"/g,'&quot;')}"
+      oninput="window._app.hsTableSearch(this.value)"
+      placeholder="Search all groups…"
+      style="width:100%;box-sizing:border-box;padding:9px 36px 9px 36px;
+      background:#080f1a;border:1.5px solid ${q?'#f97316':'#1e3a5f'};
+      border-radius:10px;color:#e2e8f0;font-size:13px;outline:none;
+      font-family:'DM Sans',sans-serif;transition:border-color .2s">
+    ${q ? `<button onclick="window._app.hsTableSearch('')"
+      style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+      background:none;border:none;cursor:pointer;color:#f97316;font-size:16px;
+      line-height:1;font-family:inherit">×</button>` : ''}
+  </div>
+
   <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="background:#0a1628">
-          ${['','#','Group','CWO','Cases','PPM','Total','Distribution'].map(h =>
-            `<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;
-            color:#475569;text-transform:uppercase;letter-spacing:1.5px;white-space:nowrap">${h}</th>`
-          ).join('')}
+          <th style="padding:9px 12px;width:22px"></th>
+          <th style="padding:9px 12px;font-size:10px;font-weight:700;color:#475569;
+            text-transform:uppercase;letter-spacing:1.5px;width:28px">#</th>
+          ${thSort('Group',        'group', 'left')}
+          ${thSort('CWO',          'cwo',   'left')}
+          ${thSort('Cases',        'case',  'left')}
+          ${thSort('PPM',          'ppm',   'left')}
+          ${thSort('Total',        'total', 'left')}
+          <th style="padding:9px 12px;font-size:10px;font-weight:700;color:#475569;
+            text-transform:uppercase;letter-spacing:1.5px">Distribution</th>
         </tr>
       </thead>
       <tbody>${rows}${empty}</tbody>
     </table>
   </div>
-  <div style="margin-top:12px;font-size:11px;color:#334155;display:flex;gap:16px;flex-wrap:wrap">
+  <div style="margin-top:12px;font-size:11px;color:#334155;display:flex;gap:16px;flex-wrap:wrap;align-items:center">
     <span><span style="color:#38bdf8">■</span> CWO</span>
     <span><span style="color:#a78bfa">■</span> Cases</span>
     <span><span style="color:#34d399">■</span> PPM</span>
     <span>🔥 Top hotspot &nbsp;● Other hotspots (≥2)</span>
-    <span style="color:#f97316">▶ Click row to expand</span>
+    <span style="margin-left:auto;color:#475569">${matchInfo}</span>
   </div>`;
 }
 
@@ -963,6 +1028,19 @@ export function hsOpenModal(uid) {
 }
 export function hsCloseModal() {
   HS.modalRecord = null;
+  renderHotspot();
+}
+export function hsTableSort(col) {
+  if (HS.tableSort.col === col) {
+    HS.tableSort.dir = HS.tableSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    HS.tableSort = { col, dir: col === 'group' ? 'asc' : 'desc' };
+  }
+  renderHotspot();
+}
+export function hsTableSearch(val) {
+  HS.tableSearch = val;
+  HS.expandedKey = null; // collapse any open row on search
   renderHotspot();
 }// ─── Drill-down sub-table (with sort / col-filter / detail modal) ────────────
 
