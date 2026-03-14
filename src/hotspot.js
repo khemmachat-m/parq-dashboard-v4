@@ -30,6 +30,9 @@ export const HS = {
   heatmapDrillFilter: {},   // { colKey: value }
   heatmapDrillColOpen: null, // colKey of open filter dropdown
   heatmapSearch: '',         // global search query for heatmap
+  patternSrc:    'ALL',      // day-of-week pattern source filter
+  repeatView:    'asset',    // repeat offender view: 'asset' | 'location'
+  repeatThresh:  3,          // minimum incidents to qualify as repeat offender
   pending:     { cwo:false, cases:false, ppm:false },
 };
 
@@ -302,8 +305,8 @@ function controlsHtml(tagged, groups) {
     </button>`;
   }).join('');
 
-  const subTabs = ['table','analytics'].map(id => {
-    const labels = { table:'📋 Table', analytics:'📊 Analytics' };
+  const subTabs = ['table','analytics','patterns','repeat'].map(id => {
+    const labels = { table:'📋 Table', analytics:'📊 Analytics', patterns:'📅 Patterns', repeat:'🔁 Repeat' };
     return `<button onclick="window._app.hsSubTab('${id}')"
       style="padding:6px 16px;border-radius:7px;border:none;cursor:pointer;font-size:12px;
       font-weight:700;font-family:inherit;
@@ -1151,6 +1154,327 @@ function analyticsHtml(tagged) {
   </div>`;
 }
 
+// ─── Day-of-week Patterns ────────────────────────────────────────────────────
+
+function patternsHtml(tagged) {
+  if (!tagged.length) return `<div style="text-align:center;padding:40px;color:#334155;font-size:13px">No records to analyse.</div>`;
+
+  const src = HS.patternSrc || 'ALL';
+  const srcColor = { ALL:'#f97316', CWO:'#38bdf8', Case:'#a78bfa', PPM:'#34d399' };
+  const color = srcColor[src];
+
+  // Filter by source
+  const rows = src === 'ALL' ? tagged : tagged.filter(r => r._src === src);
+
+  const DAYS  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const HOURS = Array.from({length:24}, (_,i) => i);
+
+  // Build day × hour matrix
+  const matrix = {};
+  DAYS.forEach(d => { matrix[d] = {}; HOURS.forEach(h => { matrix[d][h] = 0; }); });
+
+  let peakVal = 0, peakDay = '', peakHour = 0;
+
+  rows.forEach(r => {
+    if (!r.date) return;
+    // Try to get datetime from _raw
+    const raw = r._raw || {};
+    const dt = new Date(raw.CreatedOn || raw.PlannedDate || raw.ScheduledDate || r.date || '');
+    if (isNaN(dt)) return;
+    const dayIdx = (dt.getDay() + 6) % 7; // 0=Mon
+    const hour   = dt.getHours();
+    const d = DAYS[dayIdx];
+    matrix[d][hour]++;
+    if (matrix[d][hour] > peakVal) { peakVal = matrix[d][hour]; peakDay = d; peakHour = hour; }
+  });
+
+  // Day totals
+  const dayTotals = DAYS.map(d => ({ d, total: HOURS.reduce((s,h) => s + matrix[d][h], 0) }));
+  const maxDayTotal = Math.max(1, ...dayTotals.map(x => x.total));
+  const overallMax  = Math.max(1, peakVal);
+
+  // Source filter buttons
+  const srcBtns = ['ALL','CWO','Case','PPM'].map(s => {
+    const cnt = s === 'ALL' ? tagged.length : tagged.filter(r => r._src === s).length;
+    const c   = srcColor[s];
+    const active = src === s;
+    return `<button onclick="window._app.hsPatternSrc('${s}')"
+      style="padding:5px 14px;border-radius:8px;border:1.5px solid ${active?c:'#1e293b'};
+      background:${active?c+'22':'transparent'};color:${active?c:'#64748b'};
+      font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s">
+      ${s} <span style="opacity:.65;font-family:monospace">(${cnt})</span>
+    </button>`;
+  }).join('');
+
+  // Heatmap cells
+  const cellBg = (val) => {
+    if (!val) return 'transparent';
+    const t = val / overallMax;
+    const alpha = Math.round(20 + t * 215).toString(16).padStart(2,'0');
+    return color + alpha;
+  };
+
+  const hourLabels = HOURS.map(h =>
+    `<th style="padding:3px 2px;font-size:9px;color:#334155;font-weight:400;
+      text-align:center;min-width:22px">${h === 0 ? '0' : h % 2 === 0 ? h : ''}</th>`
+  ).join('');
+
+  const heatRows = DAYS.map(d => {
+    const cells = HOURS.map(h => {
+      const v = matrix[d][h];
+      const isPeak = d === peakDay && h === peakHour && v > 0;
+      return `<td style="padding:2px;text-align:center">
+        <div style="border-radius:3px;width:22px;height:22px;background:${cellBg(v)};
+          display:flex;align-items:center;justify-content:center;margin:auto;
+          font-size:8px;font-weight:700;color:${v/overallMax>0.4?color:'transparent'};
+          outline:${ispeak?`2px solid ${color}`:'none'};box-sizing:border-box">
+          ${v > 0 ? v : ''}
+        </div>
+      </td>`;
+    }).join('');
+    const rowTotal = dayTotals.find(x => x.d === d).total;
+    const isWeekend = d === 'Sat' || d === 'Sun';
+    return `<tr>
+      <td style="padding:2px 8px 2px 0;font-size:11px;font-weight:700;
+        color:${isWeekend?'#475569':'#94a3b8'};white-space:nowrap">${d}</td>
+      ${cells}
+      <td style="padding:2px 0 2px 8px;font-size:11px;font-weight:700;
+        color:${color};font-family:monospace;white-space:nowrap">${rowTotal}</td>
+    </tr>`;
+  }).join('');
+
+  // Day bar chart
+  const dayBars = dayTotals.map(({ d, total }) => {
+    const pct = Math.round(total / maxDayTotal * 100);
+    const isWeekend = d === 'Sat' || d === 'Sun';
+    const isMax = total === maxDayTotal;
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+      <div style="font-size:10px;color:${color};font-family:monospace;font-weight:700">${total > 0 ? total : ''}</div>
+      <div style="flex:1;width:100%;display:flex;flex-direction:column;justify-content:flex-end;min-height:80px">
+        <div style="background:${color}${isMax?'ff':'66'};border-radius:3px 3px 0 0;width:100%;height:${pct}%;min-height:${total>0?3:0}px;transition:height .3s"></div>
+      </div>
+      <div style="font-size:10px;font-weight:700;color:${isWeekend?'#475569':'#94a3b8'}">${d}</div>
+    </div>`;
+  }).join('');
+
+  // Peak callout
+  const peakCallout = peakVal > 0 ? `
+    <div style="display:inline-flex;align-items:center;gap:8px;background:#1a0a00;
+      border:1px solid ${color}44;border-radius:10px;padding:8px 16px;margin-bottom:16px">
+      <span style="font-size:16px">🔥</span>
+      <span style="font-size:13px;color:#e2e8f0">Peak: <strong style="color:${color}">${peakDay} ${String(peakHour).padStart(2,'0')}:00–${String(peakHour+1).padStart(2,'0')}:00</strong>
+        with <strong style="color:${color}">${peakVal}</strong> incidents</span>
+    </div>` : '';
+
+  return `
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <!-- Source filter -->
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1px">Source:</span>
+      ${srcBtns}
+    </div>
+
+    ${peakCallout}
+
+    <!-- Heatmap + Day bars side by side -->
+    <div style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start">
+
+      <!-- Day × Hour heatmap -->
+      <div style="background:#080f1a;border:1px solid #1e293b;border-radius:12px;padding:16px;overflow-x:auto">
+        <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:12px">Day × Hour heatmap</div>
+        <table style="border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="padding:3px 8px 3px 0;font-size:9px;color:#334155;text-align:left">DAY</th>
+              ${hourLabels}
+              <th style="padding:3px 0 3px 8px;font-size:9px;color:#334155">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>${heatRows}</tbody>
+        </table>
+        <div style="margin-top:8px;font-size:10px;color:#334155">Hour labels shown every 2h · deeper ${src === 'ALL' ? 'orange' : 'color'} = more incidents · timezone = UTC from Mozart export</div>
+      </div>
+
+      <!-- Day bar chart -->
+      <div style="background:#080f1a;border:1px solid #1e293b;border-radius:12px;padding:16px;min-width:200px">
+        <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:12px">Busiest days</div>
+        <div style="display:flex;gap:4px;align-items:flex-end;height:120px">
+          ${dayBars}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─── Repeat Offender Tracker ──────────────────────────────────────────────────
+
+function repeatHtml(tagged) {
+  if (!tagged.length) return `<div style="text-align:center;padding:40px;color:#334155;font-size:13px">No records to analyse.</div>`;
+
+  const view   = HS.repeatView   || 'asset';
+  const thresh = HS.repeatThresh || 3;
+
+  const PRI_WEIGHT = { 'Cat 1':4, 'Cat 2':3, 'Cat 3':2, 'Cat 4':1, Critical:4, High:3, Medium:2, Low:1 };
+
+  // Group by asset or location
+  const keyFn = view === 'asset'
+    ? r => r.asset && r.asset !== '—' ? r.asset : null
+    : r => r.location && r.location !== '—' ? r.location : null;
+
+  const map = {};
+  tagged.forEach(r => {
+    const k = keyFn(r);
+    if (!k) return;
+    if (!map[k]) map[k] = { key:k, records:[], open:0, closed:0, score:0, byMonth:{} };
+    map[k].records.push(r);
+    if (['Open','In Progress','Overdue','Scheduled'].includes(r.status)) map[k].open++;
+    else map[k].closed++;
+    const w = PRI_WEIGHT[r.priority] || 1;
+    map[k].score += w;
+    // Monthly bucket from date
+    const month = (r.date || '').slice(0, 7); // YYYY-MM
+    if (month) map[k].byMonth[month] = (map[k].byMonth[month] || 0) + 1;
+  });
+
+  // Filter by threshold and sort by score desc
+  const offenders = Object.values(map)
+    .filter(x => x.records.length >= thresh)
+    .sort((a, b) => b.score - a.score);
+
+  const maxScore = Math.max(1, offenders[0]?.score || 1);
+
+  // Threshold selector
+  const threshBtns = [2,3,5,10].map(n => {
+    const active = thresh === n;
+    return `<button onclick="window._app.hsRepeatThresh(${n})"
+      style="padding:4px 12px;border-radius:6px;border:1.5px solid ${active?'#f87171':'#1e293b'};
+      background:${active?'#f8717122':'transparent'};color:${active?'#f87171':'#64748b'};
+      font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">≥${n}</button>`;
+  }).join('');
+
+  const viewBtns = ['asset','location'].map(v => {
+    const active = view === v;
+    const label  = v === 'asset' ? '🔩 Asset' : '📍 Location';
+    return `<button onclick="window._app.hsRepeatView('${v}')"
+      style="padding:6px 16px;border-radius:7px;border:none;cursor:pointer;font-size:12px;
+      font-weight:700;font-family:inherit;
+      background:${active?'#f87171':'#1e3a5f'};
+      color:${active?'#0f172a':'#64748b'};transition:all .15s">${label}</button>`;
+  }).join('');
+
+  if (!offenders.length) return `
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;gap:3px;background:#080f1a;border-radius:9px;padding:3px;border:1px solid #1e293b">${viewBtns}</div>
+      <span style="font-size:11px;color:#475569;font-weight:700">THRESHOLD:</span>${threshBtns}
+    </div>
+    <div style="text-align:center;padding:40px;color:#334155;font-size:13px">
+      No ${view}s with ≥${thresh} incidents in the current date range & filters.
+    </div>
+  </div>`;
+
+  // Sparkline: get sorted months
+  const allMonths = [...new Set(tagged.map(r => (r.date||'').slice(0,7)).filter(Boolean))].sort().slice(-6);
+
+  const tableRows = offenders.map((x, i) => {
+    const cnt    = x.records.length;
+    const scorePct = Math.round(x.score / maxScore * 100);
+    const openPct  = Math.round(x.open  / cnt * 100);
+    const isTop    = i === 0;
+    const isHot    = i < 3;
+    // Get location or asset context for sub-label
+    const subLabel = view === 'asset'
+      ? [...new Set(x.records.map(r => r.location).filter(Boolean))][0] || ''
+      : [...new Set(x.records.map(r => r._src))].join(' · ');
+
+    // Sparkline bars
+    const sparkMax = Math.max(1, ...allMonths.map(m => x.byMonth[m] || 0));
+    const spark = allMonths.map(m => {
+      const v = x.byMonth[m] || 0;
+      const h = Math.max(2, Math.round(v / sparkMax * 24));
+      return `<div style="width:8px;background:${v>0?'#f87171':'#1e293b'};border-radius:2px 2px 0 0;height:${h}px;align-self:flex-end" title="${m}: ${v}"></div>`;
+    }).join('');
+
+    // Status pill
+    const openColor = x.open === 0 ? '#34d399' : x.open / cnt > 0.5 ? '#f87171' : '#fbbf24';
+
+    // Most common src
+    const srcCounts = {};
+    x.records.forEach(r => { srcCounts[r._src] = (srcCounts[r._src]||0)+1; });
+    const topSrc = Object.entries(srcCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || '';
+    const srcC = { CWO:'#38bdf8', Case:'#a78bfa', PPM:'#34d399' }[topSrc] || '#64748b';
+
+    return `<tr onclick="window._app.hsRepeatDrill(${JSON.stringify(x.key)})"
+      style="border-top:1px solid #0f1e30;cursor:pointer;transition:background .1s"
+      onmouseover="this.style.background='#f8717111'"
+      onmouseout="this.style.background='transparent'">
+      <td style="padding:10px 12px;font-size:12px;color:${isTop?'#f87171':'#475569'};font-family:monospace;width:32px">${isTop?'🔥':i+1}</td>
+      <td style="padding:10px 12px;max-width:220px">
+        <div style="font-size:13px;font-weight:700;color:${isHot?'#f87171':'#e2e8f0'};
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.key}</div>
+        <div style="font-size:10px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px">${subLabel}</div>
+      </td>
+      <td style="padding:10px 12px;font-family:monospace;font-size:13px;font-weight:700;color:#e2e8f0">${cnt}</td>
+      <td style="padding:10px 12px;min-width:120px">
+        <div style="height:6px;background:#1e293b;border-radius:3px;overflow:hidden;margin-bottom:3px">
+          <div style="height:100%;width:${scorePct}%;background:#f87171;border-radius:3px"></div>
+        </div>
+        <div style="font-size:10px;color:#64748b;font-family:monospace">${x.score}</div>
+      </td>
+      <td style="padding:10px 12px">
+        <span style="font-size:11px;font-weight:700;color:${openColor};font-family:monospace">${x.open}</span>
+        <span style="font-size:10px;color:#334155"> / ${cnt}</span>
+      </td>
+      <td style="padding:10px 12px">
+        <span style="background:${srcC}22;color:${srcC};border-radius:4px;padding:2px 7px;
+          font-size:10px;font-weight:700;letter-spacing:.8px">${topSrc}</span>
+      </td>
+      <td style="padding:10px 12px">
+        <div style="display:flex;gap:2px;align-items:flex-end;height:28px">${spark}</div>
+        <div style="font-size:9px;color:#334155;margin-top:2px">last ${allMonths.length}mo</div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <!-- Controls -->
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="display:flex;gap:3px;background:#080f1a;border-radius:9px;padding:3px;border:1px solid #1e293b">${viewBtns}</div>
+      <span style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1px">Threshold:</span>
+      ${threshBtns}
+      <span style="margin-left:auto;font-size:11px;color:#475569">
+        <span style="color:#f87171;font-weight:700">${offenders.length}</span> ${view}s with ≥${thresh} incidents
+      </span>
+    </div>
+
+    <!-- Table -->
+    <div style="background:#080f1a;border:1px solid #1e293b;border-radius:12px;overflow:hidden;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;min-width:640px">
+        <thead>
+          <tr style="background:#050c18">
+            ${['#','${view === "asset" ? "Asset" : "Location"}','Count','Score','Open','Top Source','Trend'].map(h =>
+              `<th style="padding:9px 12px;text-align:left;font-size:9px;font-weight:700;
+              color:#475569;text-transform:uppercase;letter-spacing:1.2px;
+              border-bottom:1px solid #1e293b;white-space:nowrap">${h}</th>`
+            ).join('')}
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+
+    <!-- Legend -->
+    <div style="font-size:11px;color:#334155;display:flex;gap:16px;flex-wrap:wrap">
+      <span>Score = count × priority weight (Cat 1=4, Cat 2=3, Cat 3=2, Cat 4=1)</span>
+      <span style="color:#f87171">■</span><span>Open &gt;50% = red</span>
+      <span style="color:#fbbf24">■</span><span>Open &lt;50% = amber</span>
+      <span style="color:#34d399">■</span><span>All closed = green</span>
+      <span>💡 Click any row to see all incidents</span>
+    </div>
+  </div>`;
+}
+
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
 
 function detailModalHtml(r) {
@@ -1278,7 +1602,10 @@ export function renderHotspot() {
       CWO + Cases + PPM grouped by dimension. Table view with drill-down and Analytics charts.
     </div>
     ${controlsHtml(tagged, groups)}
-    ${HS.subTab === 'table' ? groupedTableHtml(groups) : analyticsHtml(tagged)}
+    ${HS.subTab === 'table'    ? groupedTableHtml(groups)  :
+      HS.subTab === 'analytics' ? analyticsHtml(tagged)      :
+      HS.subTab === 'patterns'  ? patternsHtml(tagged)       :
+                                  repeatHtml(tagged)}
   </div>`;
 }
 
@@ -1318,6 +1645,30 @@ export function hsSetDim(dim) {
 }
 export function hsSubTab(tab) {
   HS.subTab = tab; renderHotspot();
+}
+export function hsPatternSrc(src) {
+  HS.patternSrc = src; renderHotspot();
+}
+export function hsRepeatView(view) {
+  HS.repeatView = view; renderHotspot();
+}
+export function hsRepeatThresh(n) {
+  HS.repeatThresh = n; renderHotspot();
+}
+export function hsRepeatDrill(key) {
+  // Reuse grouped table expand — set expandedKey and switch to table tab
+  const view = HS.repeatView || 'asset';
+  // Find matching group in getTagged
+  const tagged = getTagged();
+  const keyFn = view === 'asset'
+    ? r => r.asset && r.asset !== '—' ? r.asset : null
+    : r => r.location && r.location !== '—' ? r.location : null;
+  const recs = tagged.filter(r => keyFn(r) === key);
+  // Open a modal-like approach: show detail modal can't do multiple — open the Table tab filtered
+  HS.subTab = 'table';
+  HS.tableSearch = key;
+  HS.expandedKey = null;
+  renderHotspot();
 }
 export function hsDateFrom(val) {
   HS.dateFrom = val; HS.expandedKey = null; renderHotspot();
