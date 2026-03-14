@@ -25,6 +25,7 @@ export const HS = {
   tableSearch: '',                           // grouped table global search
   heatmapTab:  'case',                       // 'case' | 'cwo' | 'ppm'
   heatmapSort: { col: '__total__', dir: 'desc' }, // heatmap column sort
+  heatmapDrill: null,  // { rowKey, colKey, records, color } — active cell drill-down
   pending:     { cwo:false, cases:false, ppm:false },
 };
 
@@ -801,15 +802,24 @@ function buildHeatmap(records, rowFn, colFn, rowLabel, colLabel, color, maxRows=
     Total ${sortIcon('__total__')}
   </th>`;
 
+  const drill = HS.heatmapDrill;
+
   const dataRows = topRows.map((row, i) => {
     const rowTotal = topCols.reduce((s,c)=>s+((matrix[row]||{})[c]||0),0);
     const cells = topCols.map(col => {
       const v = (matrix[row]||{})[col] || 0;
       const isActiveCol = sortCol === col;
-      return `<td style="padding:5px 8px;text-align:center;font-size:11px;font-weight:${v?700:400};
-        font-family:monospace;color:${v?color:'#1e3a5f'};background:${cellBg(col,v)};
+      const isDrillActive = drill && drill.rowKey === row && drill.colKey === col;
+      const clickable = v > 0;
+      return `<td onclick='${clickable ? `window._app.hsHeatmapDrill(${JSON.stringify(row)},${JSON.stringify(col)})` : ''}'
+        style="padding:5px 8px;text-align:center;font-size:11px;font-weight:${v?700:400};
+        font-family:monospace;color:${v?color:'#1e3a5f'};background:${isDrillActive?color+'88':cellBg(col,v)};
         border-radius:3px;white-space:nowrap;
-        outline:${isActiveCol?`1px solid ${color}44`:'none'}">${v||'·'}</td>`;
+        cursor:${clickable?'pointer':'default'};
+        outline:${isDrillActive?`2px solid ${color}`:(isActiveCol?`1px solid ${color}44`:'none')};
+        transition:all .1s"
+        ${clickable?`onmouseover="this.style.outline='2px solid ${color}'" onmouseout="this.style.outline='${isDrillActive?`2px solid ${color}`:(isActiveCol?`1px solid ${color}44`:'none')}'"`:''}>
+        ${v||'·'}</td>`;
     }).join('');
     const isTotalSort = sortCol === '__total__';
     return `<tr style="border-top:1px solid #0a1628">
@@ -826,13 +836,88 @@ function buildHeatmap(records, rowFn, colFn, rowLabel, colLabel, color, maxRows=
     </tr>`;
   }).join('');
 
+  // ── Drill panel ──
+  let drillPanel = '';
+  if (drill && drill.color === color) {
+    const COLS = [
+      { key:'_src',        label:'Source'      },
+      { key:'id',          label:'ID'          },
+      { key:'date',        label:'Date'        },
+      { key:'location',    label:'Location'    },
+      { key:'asset',       label:'Asset'       },
+      { key:'status',      label:'Status'      },
+      { key:'priority',    label:'Priority'    },
+      { key:'eventType',   label:'Event Type'  },
+      { key:'problemType', label:'Problem Type'},
+      { key:'desc',        label:'Description' },
+    ];
+    const drillRecords = drill.records;
+    const drillRows = drillRecords.slice(0, 200).map((r, i) => {
+      const uid = (r._src + '_' + (r.id || i)).replace(/[^a-zA-Z0-9_-]/g, '_');
+      HS.recordCache[uid] = r;
+      const acc = SRC_COLOR[r._src] || color;
+      return `<tr onclick='window._app.hsOpenModal("${uid}")'
+        style="border-top:1px solid #0f1e30;cursor:pointer;background:${i%2===0?'transparent':'#060d18'};transition:background .1s"
+        onmouseover="this.style.background='${acc}11'"
+        onmouseout="this.style.background='${i%2===0?'transparent':'#060d18'}'">
+        <td style="padding:7px 10px">${srcChipHtml(r._src)}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#94a3b8;font-family:monospace;white-space:nowrap">${r.id||'—'}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#64748b;white-space:nowrap">${r.date||'—'}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#94a3b8;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.location||'—'}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#cbd5e1;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.asset||'—'}</td>
+        <td style="padding:7px 10px">${badgeHtml(r.status)}</td>
+        <td style="padding:7px 10px">${priHtml(r.priority)}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#94a3b8;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.eventType||r.problemType||r.ppmTaskCat||'—'}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#64748b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+          title="${(r.desc||'').replace(/"/g,'&quot;')}">${(r.desc||'—').slice(0,80)}</td>
+      </tr>`;
+    }).join('');
+
+    const more = drillRecords.length > 200
+      ? `<tr><td colspan="9" style="text-align:center;padding:8px;font-size:11px;color:#475569">… and ${drillRecords.length-200} more</td></tr>` : '';
+
+    drillPanel = `
+    <div style="margin-top:16px;border:1px solid ${color}44;border-radius:12px;overflow:hidden">
+      <div style="background:${color}11;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <span style="font-size:12px;font-weight:700;color:${color}">
+            📋 ${drillRecords.length} records
+          </span>
+          <span style="font-size:11px;color:#475569;margin-left:10px">
+            ${drill.rowKey} &nbsp;×&nbsp; ${drill.colKey}
+          </span>
+        </div>
+        <button onclick="window._app.hsHeatmapDrillClose()"
+          style="background:none;border:1px solid #334155;border-radius:8px;padding:4px 12px;
+          color:#64748b;font-size:11px;cursor:pointer;font-family:inherit">✕ Close</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:800px">
+          <thead>
+            <tr style="background:#081020">
+              ${['Source','ID','Date','Location','Asset','Status','Priority','Event/Problem','Description'].map(h=>
+                `<th style="padding:7px 10px;text-align:left;font-size:9px;font-weight:700;
+                color:#475569;text-transform:uppercase;letter-spacing:1.2px;
+                border-bottom:1px solid #1e293b;white-space:nowrap">${h}</th>`
+              ).join('')}
+            </tr>
+          </thead>
+          <tbody>${drillRows}${more}</tbody>
+        </table>
+      </div>
+      <div style="padding:8px 16px;font-size:10px;color:#1e3a5f">
+        💡 Click any row for full detail
+      </div>
+    </div>`;
+  }
+
   const svcNote = HS.svcFilter !== 'ALL'
     ? `<span style="color:${HS.svcFilter==='Hard'?'#38bdf8':'#fb923c'};font-weight:700;margin-left:8px">· ${HS.svcFilter} Service filter active</span>` : '';
 
   return `
   <div style="overflow-x:auto">
     <div style="font-size:10px;color:#475569;margin-bottom:8px">
-      ${records.length.toLocaleString()} records · Top ${topRows.length} ${rowLabel}s × Top ${topCols.length} ${colLabel}s · Click any header to sort${svcNote}
+      ${records.length.toLocaleString()} records · Top ${topRows.length} ${rowLabel}s × Top ${topCols.length} ${colLabel}s · Click any header to sort · Click any cell to drill down${svcNote}
     </div>
     <table style="width:100%;border-collapse:separate;border-spacing:2px;min-width:500px">
       <thead>
@@ -842,7 +927,8 @@ function buildHeatmap(records, rowFn, colFn, rowLabel, colLabel, color, maxRows=
       </thead>
       <tbody>${dataRows}</tbody>
     </table>
-  </div>`;
+  </div>
+  ${drillPanel}`;
 }
 
 function heatmapHtml(tagged) {
@@ -1186,7 +1272,8 @@ export function hsTableSearch(val) {
 }
 export function hsHeatmapTab(val) {
   HS.heatmapTab = val;
-  HS.heatmapSort = { col: '__total__', dir: 'desc' }; // reset sort on tab change
+  HS.heatmapSort = { col: '__total__', dir: 'desc' };
+  HS.heatmapDrill = null;
   renderHotspot();
 }
 export function hsHeatmapSort(col) {
@@ -1195,6 +1282,39 @@ export function hsHeatmapSort(col) {
     col,
     dir: cur.col === col ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'desc',
   };
+  renderHotspot();
+}
+export function hsHeatmapDrill(rowKey, colKey) {
+  // Find the matching records from the current tagged set
+  const tagged = getTagged();
+  const tab = HS.heatmapTab || 'case';
+  const srcMap = { case: 'Case', cwo: 'CWO', ppm: 'PPM' };
+  const src = srcMap[tab];
+  const color = { case:'#a78bfa', cwo:'#38bdf8', ppm:'#34d399' }[tab];
+
+  const rowFn = tab === 'ppm'
+    ? r => r.locationCustom || r.location
+    : r => r.location;
+  const colFn = tab === 'case'
+    ? r => r.eventType
+    : tab === 'cwo'
+    ? r => r.problemType
+    : r => r.ppmTaskCat || r.category;
+
+  const records = tagged
+    .filter(r => r._src === src)
+    .filter(r => (rowFn(r)||'—') === rowKey && (colFn(r)||'—') === colKey);
+
+  // If same cell clicked again — toggle close
+  if (HS.heatmapDrill?.rowKey === rowKey && HS.heatmapDrill?.colKey === colKey) {
+    HS.heatmapDrill = null;
+  } else {
+    HS.heatmapDrill = { rowKey, colKey, records, color };
+  }
+  renderHotspot();
+}
+export function hsHeatmapDrillClose() {
+  HS.heatmapDrill = null;
   renderHotspot();
 }
 // ─── Drill-down sub-table (with sort / col-filter / detail modal) ────────────
