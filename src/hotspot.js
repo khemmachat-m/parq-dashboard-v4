@@ -57,8 +57,13 @@ const HARD_KW = ['ahu','fcu','pump','cctv','fan','hv ','switchgear','chiller','c
 const SOFT_KW = ['pest','cleaning','housekeep','security','waste','landscape','garden',
   'janitorial','sanitiz','uniform','receptionist','parking','signage','access card','cosmetic','concierge'];
 
-function classifySvc(r) {
-  const hay = [r.asset, r.eventType, r.problemType, r.category].join(' ').toLowerCase();
+function classifySvc(r, src) {
+  // 1. Trust enriched column produced during CSV enrichment
+  if (src === 'PPM'  && r.category)         return r.category.includes('Soft') ? 'Soft' : 'Hard';
+  if (src === 'CWO'  && r.cwoMainCat)       return r.cwoMainCat.includes('Soft') ? 'Soft' : 'Hard';
+  if (src === 'Case' && r.caseMainCat)      return r.caseMainCat.includes('Soft') ? 'Soft' : 'Hard';
+  // 2. Fallback: keyword scan across all text fields
+  const hay = [r.asset, r.eventType, r.problemType, r.category, r.desc].join(' ').toLowerCase();
   if (SOFT_KW.some(k => hay.includes(k))) return 'Soft';
   if (HARD_KW.some(k => hay.includes(k))) return 'Hard';
   return 'Hard';
@@ -128,7 +133,10 @@ function mapRow(raw, src) {
   }
 
   const desc = r.Description || r.ShortDescription || r.Subject || r.TaskName || '';
-  const svc  = classifySvc({ asset, eventType, problemType, category });
+  // Enriched main-category columns (added during CSV enrichment)
+  const cwoMainCat  = r.CWO_Main_Category  || '';
+  const caseMainCat = r.Case_Main_Category || '';
+  const svc = classifySvc({ asset, eventType, problemType, category, desc, cwoMainCat, caseMainCat }, src);
 
   // ── Extra fields per source ──
   const assetOpsStatus = r.Asset_OperationalStatus || '';
@@ -298,8 +306,26 @@ function controlsHtml(tagged, groups) {
     </button>`;
   }).join('');
 
-  const hasDate = HS.dateFrom || HS.dateTo;
-  const summary = `${tagged.length.toLocaleString()} records${HS.subTab==='table'?' · '+groups.length+' groups':''}`;
+  const hard = [...HS.data.cwo, ...HS.data.cases, ...HS.data.ppm].filter(r => r._service === 'Hard').length;
+  const soft = [...HS.data.cwo, ...HS.data.cases, ...HS.data.ppm].filter(r => r._service === 'Soft').length;
+  const all  = hard + soft;
+
+  const svcBtns = [
+    { val:'ALL',  label:'🌐 All Services',  count: all,  color:'#e2e8f0' },
+    { val:'Hard', label:'⚙️ Hard Service',  count: hard, color:'#38bdf8' },
+    { val:'Soft', label:'🧹 Soft Service',  count: soft, color:'#fb923c' },
+  ].map(b => {
+    const active = HS.svcFilter === b.val;
+    return `<button onclick="window._app.hsSvcFilter('${b.val}')"
+      style="display:inline-flex;align-items:center;gap:7px;padding:7px 18px;border-radius:20px;
+      cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;transition:all .15s;
+      border:1.5px solid ${active ? b.color : '#1e3a5f'};
+      background:${active ? b.color + '22' : 'transparent'};
+      color:${active ? b.color : '#475569'}">
+      ${b.label}
+      <span style="font-size:10px;opacity:.7;font-family:monospace">${b.count.toLocaleString()}</span>
+    </button>`;
+  }).join('');
 
   return `
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
@@ -333,11 +359,14 @@ function controlsHtml(tagged, groups) {
     <!-- quick presets -->
     <div style="display:flex;gap:4px;flex-wrap:wrap">${presetBtns}</div>
 
-    <!-- summary -->
-    <span style="margin-left:auto;font-size:11px;color:#475569">
-      ${HS.svcFilter!=='ALL'?`<span style="color:${HS.svcFilter==='Hard'?'#38bdf8':'#fb923c'};font-weight:700">${HS.svcFilter} · </span>`:''}
-      ${summary}
-    </span>
+    <!-- record summary -->
+    <span style="margin-left:auto;font-size:11px;color:#475569">${summary}</span>
+  </div>
+
+  <!-- Service filter bar -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+    <span style="font-size:11px;color:#475569;font-weight:700;letter-spacing:1px;text-transform:uppercase">SERVICE:</span>
+    ${svcBtns}
   </div>`;
 }
 

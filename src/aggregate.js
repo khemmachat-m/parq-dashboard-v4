@@ -407,3 +407,69 @@ export function buildCmp(lwC, pwC) {
     .sort((a, b) => b.lw - a.lw || b.pw - a.pw)
     .slice(0, 12);
 }
+
+// ─── SHARED SERVICE CATEGORY CLASSIFIER ──────────────────────────────────────
+// Classifies free text (Description / ShortDescription) as 'Hard Service' or 'Soft Service'.
+// Called by enrichCWO (Description) and enrichCases (ShortDescription).
+
+const _SOFT_PATTERNS = [
+  // Cleaning (Thai + English)
+  /แม่บ้าน|ทำความสะอาด|เช็ดน้ำ|กวาด|ขยะ|เก็บขยะ|ถูพื้น|เช็ดกระจก/i,
+  /\bclean|dirt|stain|hygiene|waste|rubbish|trash|sweep|mop|wip/i,
+  // Pest Control
+  /pest|cockroach|rat|rodent|insect|mosquito|แมลง|หนู|แมลงสาบ|ปลวก/i,
+  // Housekeeping / Janitorial
+  /housekeep|janitorial|saniti/i,
+  // Security / Safety / Patrol
+  /\bsecurity\b|guard|patrol|intrusion|line.crossing|loiter|tailgat|trespass/i,
+  /รักษาความปลอดภัย|เจ้าหน้าที่รักษา|บุกรุก|ลักลอบ/i,
+  // Traffic Control / Parking Officer
+  /traffic.control|parking.officer|จราจร|เจ้าหน้าที่จราจร/i,
+  // Pet Control
+  /pet.control|สัตว์เลี้ยง|แมว|หมา.*วิ่ง/i,
+  // Gardening / Horticulture / Landscape
+  /\bgarden|landscap|horticulture|\bplant\b|trim.*tree|cut.*grass|สวน|ต้นไม้|หญ้า|ตัดหญ้า/i,
+  // Lost & Found / Concierge
+  /lost.*found|ทรัพย์สิน.*หาย|สิ่งของ.*หาย|concierge/i,
+  // Uniform / Access Card / Cosmetic
+  /uniform|access.card|cosmetic repair|งานซ่อมแต่ง/i,
+  // Cleaning Required (common Case eventtype)
+  /cleaning.required|ต้องการความสะอาด/i,
+];
+
+const _HARD_PATTERNS = [
+  // AC / HVAC / Temperature
+  /แอร์|หนาว|ร้อน|อุณหภูมิ|aircon|a\.c\.|a\/c|temperature|cooling|hvac|chiller|fcu|ahu|vrf|vrv/i,
+  // Water / Plumbing
+  /น้ำหยด|น้ำรั่ว|น้ำไหล|น้ำท่วม|ท่อน้ำ|คราบน้ำ|พื้นเปียก|น้ำเอ่อ|น้ำล้น|ท่อตัน|ท่อระบาย/i,
+  /water.leak|water.drip|plumb|drain|pipe|flood|overflow|sewage/i,
+  // Electrical / Lighting
+  /ไฟฝั่ง|สวิตช์|ปลั๊ก|ไฟรั่ว|สายไฟ|แผงไฟ|หลอดไฟ|ไฟดับ|ไฟไม่ติด|โคมไฟ|ไฟเพดาน|ไฟหลืบ/i,
+  /electric|power.out|socket|outlet|breaker|fuse|\blight\b|lamp|bulb|led|luminaire/i,
+  // Lift / Escalator
+  /ลิฟต์|ลิฟท์|บันไดเลื่อน|lift|elevator|escalator/i,
+  // Door / Lock / Access Door (hardware fault — not security patrol)
+  /ประตู.*ชำรุด|ประตู.*รั่ว|ล็อค.*ชำรุด|กุญแจ.*หัก|บานประตู/i,
+  /door.fault|door.broken|lock.broken|access.door.*fault|gate.*fault|hinge|handle.*broken/i,
+  // Fire / Safety Systems
+  /fire.alarm|smoke.detector|sprinkler|ดับเพลิง|สัญญาณเพลิง/i,
+  // Structural / Civil
+  /กระเบื้อง|ฝ้าเพดาน|ฝ้า.*แตก|ฝ้า.*หลุด|ผนัง.*ร้าว|พื้น.*แตก/i,
+  /floor.*crack|tile.*broken|ceiling.*damage|wall.*crack|civil.work/i,
+  // Mechanical / Pump / Generator / BMS
+  /pump|generator|\bups\b|\bbms\b|compressor|boiler|ventilation|switchgear|\bfan\b|motor|sensor|detector/i,
+  // CCTV / Camera (system fault — not monitoring)
+  /cctv.*fault|cctv.*offline|camera.*offline|camera.*broken/i,
+  // Signage / Display (hardware)
+  /จอภาพ.*ชำรุด|display.*fault|screen.*broken|signage.*damaged/i,
+  // Sanitary / WC infrastructure
+  /โถ.*ชำรุด|โถ.*แตก|อ่างล้างมือ.*รั่ว|toilet.*broken|wc.*fault|wc.*broken/i,
+];
+
+export function getSvcMainCategory(text) {
+  const t = String(text || '').trim();
+  if (!t) return 'Hard Service';
+  if (_SOFT_PATTERNS.some(rx => rx.test(t))) return 'Soft Service';
+  if (_HARD_PATTERNS.some(rx => rx.test(t))) return 'Hard Service';
+  return 'Hard Service'; // default
+}

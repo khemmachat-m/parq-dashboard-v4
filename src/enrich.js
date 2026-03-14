@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { S } from './state.js';
 import { lookup } from './masters.js';
-import { getEventLabel, getPPMTaskCategoryLabel, getPPMMainCategoryLabel, getLocationCustom } from './aggregate.js';
+import { getEventLabel, getPPMTaskCategoryLabel, getPPMMainCategoryLabel, getLocationCustom, getSvcMainCategory } from './aggregate.js';
 
 export function enrichCases(rows, M) {
   const { priority, location, assetByTag, eventTypeByCode } = M;
@@ -33,6 +33,8 @@ export function enrichCases(rows, M) {
     if (et.Description)     out.EventType_Description     = et.Description;
     if (et.EventCategoryId) out.EventType_EventCategoryId = et.EventCategoryId;
     if (et.PriorityLevelId) out.EventType_PriorityLevelId = et.PriorityLevelId;
+    // Service category: keyword-scan on ShortDescription (or Description as fallback)
+    out.Case_Main_Category = getSvcMainCategory(row.ShortDescription || row.ShortDesc || row.Description || '');
     return out;
   });
 }
@@ -68,6 +70,8 @@ export function enrichCWO(rows, M) {
     if (pt.Description) out.ProblemType_Description = pt.Description;
     // Keyword-matched problem type label — user can review/correct in the CSV
     out.ProblemType_Name = getEventLabel(out);
+    // Service category: keyword-scan on Description
+    out.CWO_Main_Category = getSvcMainCategory(row.Description || row.ShortDescription || '');
     return out;
   });
 }
