@@ -343,10 +343,18 @@ function controlsHtml(tagged, groups) {
 
 // ─── Grouped table ────────────────────────────────────────────────
 function groupedTableHtml(groups) {
-  // ── Search filter ──
+  // ── Search filter — scans inside records across key fields ──
   const q = (HS.tableSearch || '').trim().toLowerCase();
   const filtered = q
-    ? groups.filter(row => row.key.toLowerCase().includes(q))
+    ? groups.filter(row => {
+        // First check group name itself
+        if (row.key.toLowerCase().includes(q)) return true;
+        // Then scan individual records
+        return row.records.some(r => [
+          r.id, r.desc, r.asset, r.location, r.eventType,
+          r.problemType, r.priority, r.status, r._src,
+        ].some(v => v && String(v).toLowerCase().includes(q)));
+      })
     : groups;
 
   // ── Sort ──
