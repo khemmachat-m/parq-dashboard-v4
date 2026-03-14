@@ -24,6 +24,8 @@ import {
   hsHeatmapDrillSort, hsHeatmapDrillColFilter, hsHeatmapDrillColOpen, hsHeatmapDrillReset,
   hsHeatmapSearch,
   hsPatternSrc, hsPatternCatToggle, hsPatternCatAll, hsPatternCatNone,
+  hsPatternDrill, hsPatternDrillClose, hsPatternDrillSort,
+  hsPatternDrillColFilter, hsPatternDrillColOpen, hsPatternDrillReset,
   hsRepeatView, hsRepeatThresh, hsRepeatDrill,
 } from './hotspot.js';
 
@@ -79,6 +81,12 @@ window._app = {
   hsPatternCatToggle,
   hsPatternCatAll,
   hsPatternCatNone,
+  hsPatternDrill,
+  hsPatternDrillClose,
+  hsPatternDrillSort,
+  hsPatternDrillColFilter,
+  hsPatternDrillColOpen,
+  hsPatternDrillReset,
   hsRepeatView,
   hsRepeatThresh,
   hsRepeatDrill,

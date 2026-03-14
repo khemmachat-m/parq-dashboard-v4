@@ -32,6 +32,7 @@ export const HS = {
   heatmapSearch: '',         // global search query for heatmap
   patternSrc:    'ALL',      // day-of-week pattern source filter
   patternCatSel: null,       // null = all selected; Set of selected category strings
+  patternDrill:  null,       // { day, hour, records } — active cell drill-down
   repeatView:    'asset',    // repeat offender view: 'asset' | 'location'
   repeatThresh:  3,          // minimum incidents to qualify as repeat offender
   pending:     { cwo:false, cases:false, ppm:false },
@@ -1243,6 +1244,10 @@ function patternsHtml(tagged) {
   const DAYS  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const HOURS = Array.from({length:24}, (_,i) => i);
 
+  // Store row records by day+hour key for drill-down lookup
+  const cellRecords = {};
+  DAYS.forEach(d => { HOURS.forEach(h => { cellRecords[`${d}:${h}`] = []; }); });
+
   const matrix = {};
   DAYS.forEach(d => { matrix[d] = {}; HOURS.forEach(h => { matrix[d][h] = 0; }); });
 
@@ -1257,6 +1262,7 @@ function patternsHtml(tagged) {
     const hour   = dt.getHours();
     const d = DAYS[dayIdx];
     matrix[d][hour]++;
+    cellRecords[`${d}:${hour}`].push(r);
     if (matrix[d][hour] > peakVal) { peakVal = matrix[d][hour]; peakDay = d; peakHour = hour; }
   });
 
@@ -1278,12 +1284,18 @@ function patternsHtml(tagged) {
   const heatRows = DAYS.map(d => {
     const cells = HOURS.map(h => {
       const v = matrix[d][h];
-      const isPeak = d === peakDay && h === peakHour && v > 0;
+      const isPeak    = d === peakDay && h === peakHour && v > 0;
+      const isDrill   = HS.patternDrill?.day === d && HS.patternDrill?.hour === h;
+      const clickable = v > 0;
       return `<td style="padding:2px;text-align:center">
-        <div style="border-radius:3px;width:22px;height:22px;background:${cellBg(v)};
+        <div onclick='${clickable ? `window._app.hsPatternDrill("${d}",${h})` : ''}'
+          style="border-radius:3px;width:22px;height:22px;background:${isDrill ? color : cellBg(v)};
           display:flex;align-items:center;justify-content:center;margin:auto;
-          font-size:8px;font-weight:700;color:${v/overallMax>0.4?color:'transparent'};
-          outline:${isPeak?`2px solid ${color}`:'none'};box-sizing:border-box">
+          font-size:8px;font-weight:700;color:${v/overallMax>0.4||isDrill?color:'transparent'};
+          outline:${isDrill?`2px solid ${color}`:isPeak?`2px solid ${color}44`:'none'};
+          box-sizing:border-box;cursor:${clickable?'pointer':'default'};
+          transition:all .1s"
+          ${clickable?`onmouseover="this.style.outline='2px solid ${color}'" onmouseout="this.style.outline='${isDrill?`2px solid ${color}`:isPeak?`2px solid ${color}44`:'none'}'"`:''}>
           ${v > 0 ? v : ''}
         </div>
       </td>`;
@@ -1313,6 +1325,7 @@ function patternsHtml(tagged) {
     </div>`;
   }).join('');
 
+  // ── Peak callout ─────────────────────────────────────────────────
   const peakCallout = peakVal > 0 ? `
     <div style="display:inline-flex;align-items:center;gap:8px;background:#1a0a00;
       border:1px solid ${color}44;border-radius:10px;padding:8px 16px;margin-bottom:14px">
@@ -1321,6 +1334,159 @@ function patternsHtml(tagged) {
         · <strong style="color:${color}">${peakVal}</strong> incidents</span>
       ${rows.length !== srcRows.length ? `<span style="font-size:10px;color:#475569">(${rows.length.toLocaleString()} of ${srcRows.length.toLocaleString()} records)</span>` : ''}
     </div>` : '';
+
+  // ── Drill panel ──────────────────────────────────────────────────
+  let drillPanel = '';
+  const pd = HS.patternDrill;
+  if (pd) {
+    const drillRecs = pd.records;
+    const PRI_ORDER = { Critical:0, High:1, Medium:2, Low:3 };
+    const ds  = HS.patternDrillSort   || { col:'_src', dir:'asc' };
+    const df  = HS.patternDrillFilter || {};
+    const dco = HS.patternDrillColOpen;
+
+    const DCOLS = [
+      { key:'_src',        label:'Source',       sortable:true,  filterable:true  },
+      { key:'id',          label:'ID',           sortable:true,  filterable:false },
+      { key:'location',    label:'Location',     sortable:true,  filterable:true  },
+      { key:'asset',       label:'Asset',        sortable:true,  filterable:true  },
+      { key:'status',      label:'Status',       sortable:true,  filterable:true  },
+      { key:'priority',    label:'Priority',     sortable:true,  filterable:true  },
+      { key:'_cat',        label:'Type',         sortable:true,  filterable:true  },
+      { key:'desc',        label:'Description',  sortable:false, filterable:false },
+    ];
+
+    const withCat = drillRecs.map(r => ({
+      ...r, _cat: r.problemType || r.eventType || r.ppmTaskCat || '—',
+    }));
+
+    // Apply col filters
+    let filtered = withCat;
+    Object.entries(df).forEach(([k,v]) => {
+      if (!v || v === 'All') return;
+      filtered = filtered.filter(r => String(r[k]||'') === v);
+    });
+
+    // Sort
+    filtered = [...filtered].sort((a,b) => {
+      if (ds.col === 'priority') {
+        const av = PRI_ORDER[a.priority]??9, bv = PRI_ORDER[b.priority]??9;
+        return ds.dir==='asc' ? av-bv : bv-av;
+      }
+      const av = String(a[ds.col]??'').toLowerCase();
+      const bv = String(b[ds.col]??'').toLowerCase();
+      return ds.dir==='asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+
+    const activeFilters = Object.values(df).filter(v => v && v !== 'All').length;
+    const fVals = {};
+    DCOLS.filter(c=>c.filterable).forEach(c => {
+      fVals[c.key] = [...new Set(withCat.map(r=>String(r[c.key]||'')).filter(Boolean))].sort();
+    });
+
+    // Header cells
+    const thCells = DCOLS.map(c => {
+      const isSorted  = ds.col === c.key;
+      const hasFilter = df[c.key] && df[c.key] !== 'All';
+      const colColor  = (isSorted||hasFilter) ? color : '#475569';
+      const sortIcon  = isSorted ? (ds.dir==='asc'?'↑':'↓') : '↕';
+
+      const sortSpan = c.sortable
+        ? `<span onclick="window._app.hsPatternDrillSort('${c.key}')"
+            style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;
+            padding:2px 4px;border-radius:4px;background:${isSorted?color+'14':'transparent'}">
+            ${c.label} <span style="font-size:9px;color:${isSorted?color:'#334155'}">${sortIcon}</span>
+          </span>`
+        : `<span style="padding:2px 4px">${c.label}</span>`;
+
+      let filterBtn = '';
+      if (c.filterable) {
+        const isOpen = dco === c.key;
+        const cur    = df[c.key] || 'All';
+        const dot    = hasFilter ? '●' : '⌄';
+        const items  = ['All',...fVals[c.key]].map(v =>
+          `<div onclick="window._app.hsPatternDrillColFilter('${c.key}',${JSON.stringify(v)});event.stopPropagation()"
+            style="padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;
+            font-weight:${v===cur?700:400};color:${v===cur?color:'#cbd5e1'};
+            background:${v===cur?'#1e293b':'transparent'}"
+            onmouseover="if('${v}'!=='${cur}')this.style.background='#1e293b'"
+            onmouseout="if('${v}'!=='${cur}')this.style.background='transparent'">${v}</div>`
+        ).join('');
+        const dropdown = isOpen
+          ? `<div style="position:absolute;top:100%;left:0;z-index:999;background:#0f172a;
+              border:1px solid #334155;border-radius:10px;padding:6px;min-width:160px;
+              box-shadow:0 16px 40px rgba(0,0,0,.6);max-height:260px;overflow-y:auto">
+              ${items}</div>` : '';
+        filterBtn = `<span style="position:relative;display:inline-block">
+          <button onclick="window._app.hsPatternDrillColOpen('${c.key}');event.stopPropagation()"
+            style="background:none;border:none;cursor:pointer;padding:0 2px;
+            color:${hasFilter?color:'#475569'};font-size:12px;font-family:inherit">${dot}</button>
+          ${dropdown}
+        </span>`;
+      }
+
+      return `<th style="padding:7px 10px;text-align:left;font-size:9px;font-weight:700;
+        text-transform:uppercase;letter-spacing:1.2px;white-space:nowrap;user-select:none;
+        color:${colColor};border-bottom:1px solid ${isSorted?color+'44':'#1e293b'}">
+        <span style="display:inline-flex;align-items:center;gap:4px">${sortSpan}${filterBtn}</span>
+      </th>`;
+    }).join('');
+
+    const drillRows = filtered.slice(0,200).map((r,i) => {
+      const uid = (r._src+'_'+(r.id||i)).replace(/[^a-zA-Z0-9_-]/g,'_');
+      HS.recordCache[uid] = r;
+      const acc = SRC_COLOR[r._src] || color;
+      return `<tr onclick='window._app.hsOpenModal("${uid}")'
+        style="border-top:1px solid #0f1e30;cursor:pointer;background:${i%2===0?'transparent':'#060d18'};transition:background .1s"
+        onmouseover="this.style.background='${acc}11'"
+        onmouseout="this.style.background='${i%2===0?'transparent':'#060d18'}'">
+        <td style="padding:7px 10px">${srcChipHtml(r._src)}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#94a3b8;font-family:monospace;white-space:nowrap">${r.id||'—'}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#94a3b8;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.location||'—'}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#cbd5e1;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.asset||'—'}</td>
+        <td style="padding:7px 10px">${badgeHtml(r.status)}</td>
+        <td style="padding:7px 10px">${priHtml(r.priority)}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#94a3b8;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r._cat||'—'}</td>
+        <td style="padding:7px 10px;font-size:11px;color:#64748b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+          title="${(r.desc||'').replace(/"/g,'&quot;')}">${(r.desc||'—').slice(0,80)}</td>
+      </tr>`;
+    }).join('');
+
+    const more = filtered.length>200
+      ? `<tr><td colspan="8" style="text-align:center;padding:8px;font-size:11px;color:#475569">… and ${filtered.length-200} more</td></tr>` : '';
+    const noRows = filtered.length===0
+      ? `<tr><td colspan="8" style="text-align:center;padding:20px;color:#334155;font-size:13px">No records match filters.</td></tr>` : '';
+    const resetBtn = activeFilters>0
+      ? `<button onclick="window._app.hsPatternDrillReset()"
+          style="padding:4px 10px;border-radius:6px;border:1px solid #f87171;background:#1a0a0a;
+          color:#f87171;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✕ Reset filters</button>` : '';
+
+    drillPanel = `
+    <div style="margin-top:16px;border:1px solid ${color}44;border-radius:12px;overflow:hidden">
+      <div style="background:${color}11;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:700;color:${color}">
+            📋 ${filtered.length}${activeFilters?'/'+drillRecs.length:''} records
+          </span>
+          <span style="font-size:11px;color:#475569">${pd.day} · ${String(pd.hour).padStart(2,'0')}:00–${String(pd.hour+1).padStart(2,'0')}:00</span>
+          ${activeFilters?`<span style="font-size:11px;color:${color};font-weight:700">${activeFilters} filter${activeFilters>1?'s':''} active</span>`:''}
+          ${resetBtn}
+        </div>
+        <button onclick="window._app.hsPatternDrillClose()"
+          style="background:none;border:1px solid #334155;border-radius:8px;padding:4px 12px;
+          color:#64748b;font-size:11px;cursor:pointer;font-family:inherit">✕ Close</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:700px">
+          <thead><tr style="background:#081020">${thCells}</tr></thead>
+          <tbody>${drillRows}${noRows}${more}</tbody>
+        </table>
+      </div>
+      <div style="padding:8px 16px;font-size:10px;color:#1e3a5f">
+        ↑↓ Click column to sort &nbsp;⌄ Column filter &nbsp;💡 Click row for full detail
+      </div>
+    </div>`;
+  }
 
   return `
   <div style="display:flex;flex-direction:column;gap:12px">
@@ -1338,7 +1504,7 @@ function patternsHtml(tagged) {
     <!-- Heatmap + Day bars -->
     <div style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start">
       <div style="background:#080f1a;border:1px solid #1e293b;border-radius:12px;padding:16px;overflow-x:auto">
-        <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:12px">Day × Hour heatmap</div>
+        <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:12px">Day × Hour heatmap · click any cell to drill down</div>
         <table style="border-collapse:collapse">
           <thead>
             <tr>
@@ -1356,6 +1522,8 @@ function patternsHtml(tagged) {
         <div style="display:flex;gap:4px;align-items:flex-end;height:120px">${dayBars}</div>
       </div>
     </div>
+
+    ${drillPanel}
   </div>`;
 }
 
@@ -1725,6 +1893,59 @@ export function hsPatternCatAll() {
 }
 export function hsPatternCatNone() {
   HS.patternCatSel = new Set(); // empty = nothing selected
+  renderHotspot();
+}
+export function hsPatternDrill(day, hour) {
+  if (HS.patternDrill?.day === day && HS.patternDrill?.hour === hour) {
+    HS.patternDrill = null;
+  } else {
+    const src     = HS.patternSrc || 'ALL';
+    const tagged  = getTagged();
+    const srcRows = src === 'ALL' ? tagged : tagged.filter(r => r._src === src);
+    const selSet  = HS.patternCatSel;
+    const CAT_FIELD = { CWO:'problemType', Case:'eventType', PPM:'ppmTaskCat' };
+    let rows = srcRows;
+    if (src !== 'ALL' && selSet !== null) {
+      const field = CAT_FIELD[src];
+      rows = srcRows.filter(r => selSet.has(r[field] || '—'));
+    }
+    const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const records = rows.filter(r => {
+      const raw = r._raw || {};
+      const dt  = new Date(raw.CreatedOn || raw.PlannedDate || raw.ScheduledDate || r.date || '');
+      if (isNaN(dt)) return false;
+      return DAYS[(dt.getDay()+6)%7] === day && dt.getHours() === hour;
+    });
+    HS.patternDrill        = { day, hour, records };
+    HS.patternDrillSort    = { col:'_src', dir:'asc' };
+    HS.patternDrillFilter  = {};
+    HS.patternDrillColOpen = null;
+  }
+  renderHotspot();
+}
+export function hsPatternDrillClose() {
+  HS.patternDrill = null; renderHotspot();
+}
+export function hsPatternDrillSort(col) {
+  const cur = HS.patternDrillSort || { col:'_src', dir:'asc' };
+  HS.patternDrillSort = { col, dir: cur.col===col?(cur.dir==='asc'?'desc':'asc'):'asc' };
+  HS.patternDrillColOpen = null;
+  renderHotspot();
+}
+export function hsPatternDrillColFilter(colKey, val) {
+  if (!HS.patternDrillFilter) HS.patternDrillFilter = {};
+  HS.patternDrillFilter[colKey] = val;
+  HS.patternDrillColOpen = null;
+  renderHotspot();
+}
+export function hsPatternDrillColOpen(colKey) {
+  HS.patternDrillColOpen = HS.patternDrillColOpen===colKey ? null : colKey;
+  renderHotspot();
+}
+export function hsPatternDrillReset() {
+  HS.patternDrillFilter  = {};
+  HS.patternDrillSort    = { col:'_src', dir:'asc' };
+  HS.patternDrillColOpen = null;
   renderHotspot();
 }
 function _getPatternCats() {
