@@ -1209,8 +1209,8 @@ function patternsHtml(tagged) {
   if (src !== 'ALL' && availCats.length > 0) {
     const catBtns = availCats.map(cat => {
       const active = selSet === null || selSet.has(cat);
-      const esc    = JSON.stringify(cat);
-      return `<button onclick="window._app.hsPatternCatToggle(${esc})"
+      const safecat = cat.replace(/'/g, "\\'");
+      return `<button onclick='window._app.hsPatternCatToggle("${safecat}")'
         style="padding:3px 10px;border-radius:6px;font-size:10px;font-weight:700;
         font-family:inherit;cursor:pointer;transition:all .12s;white-space:nowrap;
         border:1.5px solid ${active?color:'#1e3a5f'};
